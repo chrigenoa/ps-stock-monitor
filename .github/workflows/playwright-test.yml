@@ -1,10 +1,13 @@
-name: Playwright Stock Parser Test
+name: Shopify Market Diagnostic
 
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  test-stock-parser:
+  shopify-market-diagnostic:
     runs-on: ubuntu-latest
 
     steps:
@@ -20,129 +23,27 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install playwright
-          playwright install chromium --with-deps
+          playwright install --with-deps chromium
 
-      - name: Test PlayStation Direct parser
+      - name: Run Shopify market diagnostic
         run: |
-          cat > test_parser.py <<'PY'
+          python - <<'PY'
           from playwright.sync_api import sync_playwright
-          import re
-          import time
 
-          PRODUCTS = [
-              {
-                  "name": "Wolverine Battle Yellow Console Covers",
-                  "url": "https://direct.playstation.com/it-it/buy-accessories/playstation5-pro-console-covers-marvels-wolverine-battle-yellow-limited-edition",
-                  "expected": "OUT_OF_STOCK",
-              },
-              {
-                  "name": "PS5 Pro Console",
-                  "url": "https://direct.playstation.com/it-it/buy-consoles/playstation5-pro-console",
-                  "expected": "OUT_OF_STOCK",
-              },
-              {
-                  "name": "DualSense Wolverine Battle Yellow",
-                  "url": "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-marvels-wolverine-battle-yellow-limited-edition-for-ps5-pc-mac-mobile",
-                  "expected": "OUT_OF_STOCK",
-              },
-              {
-                  "name": "DualSense GTA VI Black",
-                  "url": "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-grand-theft-auto-vi-black-limited-edition-for-ps5-pc-mac-mobile",
-                  "expected": "OUT_OF_STOCK",
-              },
-              {
-                  "name": "DualSense GTA VI White",
-                  "url": "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-grand-theft-auto-vi-white-limited-edition-for-ps5-pc-mac-mobile",
-                  "expected": "OUT_OF_STOCK",
-              },
-              {
-                  "name": "DualSense Wolverine Adamantium",
-                  "url": "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-marvels-wolverine-adamantium-limited-edition-for-ps5-pc-mac-mobile",
-                  "expected": "AVAILABLE",
-              },
-          ]
 
-          def clean(text):
-              return re.sub(r"\s+", " ", text or "").strip()
+          PRODUCT_URL = (
+              "https://www.gtavi-thealbum.com/"
+              "en-eu/products/"
+              "grand-theft-auto-vi-the-album-limited-edition-vinyl"
+          )
 
-          def detect_stock(page):
-              """
-              Detects stock using ONLY the main product hero component.
+          BASE_URL = "https://www.gtavi-thealbum.com"
 
-              Important:
-              - We do NOT use page-wide "non disponibile".
-              - We do NOT use generic page-wide "Aggiungi al carrello".
-              - We specifically look for the main product's
-                `.add-to-cart` button.
-              """
+          LOCALIZATION_JS_URL = (
+              BASE_URL
+              + "/cdn/shop/t/5/assets/localization-form.js"
+          )
 
-              h1 = page.locator("h1").first
-
-              if h1.count() == 0:
-                  return "UNKNOWN", "H1 not found"
-
-              # The H1 is directly inside the productHero component.
-              hero = h1.locator("xpath=..")
-
-              if hero.count() == 0:
-                  return "UNKNOWN", "Product hero not found"
-
-              # The main product uses:
-              # .add-to-cart
-              #
-              # Related products use:
-              # .js-add-to-cart
-              #
-              # Therefore we deliberately select only .add-to-cart.
-              buttons = hero.locator("button.add-to-cart")
-
-              count = buttons.count()
-
-              if count == 0:
-                  return "UNKNOWN", "Main add-to-cart button not found"
-
-              visible_buttons = []
-
-              for i in range(count):
-                  button = buttons.nth(i)
-
-                  try:
-                      visible = button.is_visible()
-                  except Exception:
-                      visible = False
-
-                  try:
-                      enabled = button.is_enabled()
-                  except Exception:
-                      enabled = False
-
-                  try:
-                      text = clean(button.inner_text())
-                  except Exception:
-                      text = ""
-
-                  visible_buttons.append(
-                      {
-                          "visible": visible,
-                          "enabled": enabled,
-                          "text": text,
-                      }
-                  )
-
-              # Any visible + enabled main-product CTA means available.
-              for button in visible_buttons:
-                  if (
-                      button["visible"]
-                      and button["enabled"]
-                      and "aggiungi al carrello" in button["text"].lower()
-                  ):
-                      return "AVAILABLE", "Visible main add-to-cart"
-
-              # If the main CTA exists but is hidden, the product is out of stock.
-              if visible_buttons:
-                  return "OUT_OF_STOCK", "Main add-to-cart hidden"
-
-              return "UNKNOWN", "Unable to determine"
 
           with sync_playwright() as p:
 
@@ -156,107 +57,455 @@ jobs:
 
               context = browser.new_context(
                   locale="it-IT",
+                  timezone_id="Europe/Rome",
                   viewport={
                       "width": 1440,
                       "height": 1000,
                   },
+                  user_agent=(
+                      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                      "AppleWebKit/537.36 (KHTML, like Gecko) "
+                      "Chrome/153.0.0.0 Safari/537.36"
+                  ),
               )
 
               page = context.new_page()
 
-              results = []
-              total_start = time.time()
+
+              # --------------------------------------------------
+              # OPEN PRODUCT
+              # --------------------------------------------------
+
+              print("=" * 80)
+              print("OPENING EU PRODUCT")
+              print("=" * 80)
+
+              page.goto(
+                  PRODUCT_URL,
+                  wait_until="domcontentloaded",
+                  timeout=60000,
+              )
+
+              page.wait_for_timeout(5000)
 
               print()
-              print("=" * 100)
-              print("PLAYSTATION DIRECT STOCK PARSER TEST")
-              print("=" * 100)
+              print("CURRENT URL:")
+              print(page.url)
+
               print()
+              print("TITLE:")
+              print(page.title())
 
-              for product in PRODUCTS:
 
-                  start = time.time()
+              # --------------------------------------------------
+              # INITIAL COOKIES
+              # --------------------------------------------------
+
+              print()
+              print("=" * 80)
+              print("INITIAL LOCALIZATION COOKIES")
+              print("=" * 80)
+
+              for cookie in context.cookies():
+                  if cookie["name"] in (
+                      "localization",
+                      "cart_currency",
+                  ):
+                      print(
+                          cookie["name"],
+                          "=",
+                          cookie["value"],
+                      )
+
+
+              # --------------------------------------------------
+              # LOCALIZATION FORM
+              # --------------------------------------------------
+
+              print()
+              print("=" * 80)
+              print("LOCALIZATION FORM")
+              print("=" * 80)
+
+              localization_form = page.locator(
+                  'form[action="/localization"]'
+              )
+
+              print(
+                  "Localization forms:",
+                  localization_form.count(),
+              )
+
+              if localization_form.count() > 0:
+
+                  form = localization_form.first
+
+                  print()
+                  print("FORM HTML:")
+
+                  print(
+                      form.evaluate(
+                          "el => el.outerHTML.substring(0, 12000)"
+                      )
+                  )
+
+                  print()
+                  print("INPUTS:")
+
+                  inputs = form.locator("input")
+
+                  for i in range(inputs.count()):
+
+                      inp = inputs.nth(i)
+
+                      print(
+                          f"INPUT {i}: "
+                          f"name={inp.get_attribute('name')!r} "
+                          f"type={inp.get_attribute('type')!r} "
+                          f"value={inp.get_attribute('value')!r}"
+                      )
+
+                  print()
+                  print("BUTTONS:")
+
+                  buttons = form.locator("button")
+
+                  for i in range(buttons.count()):
+
+                      button = buttons.nth(i)
+
+                      try:
+
+                          print(
+                              f"BUTTON {i}: "
+                              f"text={button.inner_text().strip()!r} "
+                              f"name={button.get_attribute('name')!r} "
+                              f"value={button.get_attribute('value')!r} "
+                              f"type={button.get_attribute('type')!r}"
+                          )
+
+                      except Exception:
+                          pass
+
+
+              # --------------------------------------------------
+              # ITALY ELEMENT
+              # --------------------------------------------------
+
+              print()
+              print("=" * 80)
+              print("ITALY ELEMENT")
+              print("=" * 80)
+
+              italy = page.get_by_text(
+                  "Italy",
+                  exact=True,
+              )
+
+              print(
+                  "Italy elements:",
+                  italy.count(),
+              )
+
+              for i in range(
+                  min(italy.count(), 5)
+              ):
+
+                  element = italy.nth(i)
 
                   try:
-                      response = page.goto(
-                          product["url"],
-                          wait_until="domcontentloaded",
-                          timeout=30000,
+
+                      print()
+                      print(
+                          f"ITALY {i}:"
                       )
-
-                      page.wait_for_timeout(1500)
-
-                      status, reason = detect_stock(page)
-
-                      elapsed = time.time() - start
-
-                      expected = product["expected"]
-                      correct = status == expected
-
-                      results.append(correct)
-
-                      symbol = "OK" if correct else "FAIL"
 
                       print(
-                          f"[{symbol}] "
-                          f"{product['name']}: "
-                          f"{status} "
-                          f"(expected {expected}) "
-                          f"| {elapsed:.2f}s"
+                          element.evaluate(
+                              """
+                              el => {
+                                  let p = el;
+                                  let result = [];
+
+                                  for (
+                                      let i = 0;
+                                      i < 5 && p;
+                                      i++,
+                                      p = p.parentElement
+                                  ) {
+                                      result.push({
+                                          tag: p.tagName,
+                                          id: p.id,
+                                          class: p.className,
+                                          outer:
+                                              p.outerHTML
+                                              .substring(0, 3000)
+                                      });
+                                  }
+
+                                  return result;
+                              }
+                              """
+                          )
                       )
 
-                      print(f"     reason: {reason}")
-
-                      if response:
-                          print(f"     HTTP: {response.status}")
-
-                      print(f"     URL: {page.url}")
-                      print()
-
-                  except Exception as exc:
-
-                      results.append(False)
+                  except Exception as e:
 
                       print(
-                          f"[FAIL] "
-                          f"{product['name']}: ERROR"
+                          "ERROR:",
+                          repr(e),
                       )
 
-                      print(f"     {type(exc).__name__}: {exc}")
-                      print()
 
-              total_time = time.time() - total_start
-
-              print("=" * 100)
-              print("FINAL RESULT")
-              print("=" * 100)
-
-              passed = sum(results)
-              total = len(results)
-
-              print(
-                  f"Passed: {passed}/{total}"
-              )
-
-              print(
-                  f"Total time: {total_time:.2f}s"
-              )
+              # --------------------------------------------------
+              # LOCALIZATION JAVASCRIPT
+              # --------------------------------------------------
 
               print()
+              print("=" * 80)
+              print("LOCALIZATION JS")
+              print("=" * 80)
 
-              if passed == total:
-                  print("SUCCESS: ALL PARSER TESTS PASSED")
-              else:
-                  print("FAILURE: ONE OR MORE PARSER TESTS FAILED")
+              try:
 
-              print("=" * 100)
+                  response = page.request.get(
+                      LOCALIZATION_JS_URL,
+                      timeout=30000,
+                  )
+
+                  print(
+                      "HTTP:",
+                      response.status,
+                  )
+
+                  js_text = response.text()
+
+                  print()
+                  print(js_text[:20000])
+
+              except Exception as e:
+
+                  print(
+                      "ERROR:",
+                      repr(e),
+                  )
+
+
+              # --------------------------------------------------
+              # CLICK ITALY
+              # --------------------------------------------------
+
+              print()
+              print("=" * 80)
+              print("SELECTING ITALY")
+              print("=" * 80)
+
+              try:
+
+                  italy = page.get_by_text(
+                      "Italy",
+                      exact=True,
+                  ).first
+
+                  print(
+                      "Visible:",
+                      italy.is_visible(),
+                  )
+
+                  print(
+                      "Enabled:",
+                      italy.is_enabled(),
+                  )
+
+                  print(
+                      "Clicking Italy..."
+                  )
+
+                  italy.click(
+                      force=True,
+                  )
+
+                  page.wait_for_timeout(5000)
+
+                  print()
+                  print("AFTER ITALY CLICK")
+
+                  print(
+                      "URL:",
+                      page.url,
+                  )
+
+                  print()
+                  print("COOKIES:")
+
+                  for cookie in context.cookies():
+
+                      if cookie["name"] in (
+                          "localization",
+                          "cart_currency",
+                      ):
+
+                          print(
+                              cookie["name"],
+                              "=",
+                              cookie["value"],
+                          )
+
+
+                  print()
+                  print("PRODUCT TEXT:")
+
+                  body_text = page.locator(
+                      "body"
+                  ).inner_text()
+
+                  for line in body_text.splitlines():
+
+                      line = line.strip()
+
+                      if not line:
+                          continue
+
+                      if any(
+                          x.lower() in line.lower()
+                          for x in [
+                              "sold out",
+                              "pre-order",
+                              "pre order",
+                              "add to cart",
+                              "123,99",
+                              "124.98",
+                              "$124.98",
+                              "€123,99",
+                              "italy",
+                          ]
+                      ):
+
+                          print(
+                              repr(line)
+                          )
+
+              except Exception as e:
+
+                  print(
+                      "ITALY CLICK ERROR:",
+                      repr(e),
+                  )
+
+
+              # --------------------------------------------------
+              # CHECK LOCALIZATION FORM AFTER CLICK
+              # --------------------------------------------------
+
+              print()
+              print("=" * 80)
+              print("LOCALIZATION FORM AFTER ITALY CLICK")
+              print("=" * 80)
+
+              try:
+
+                  form = page.locator(
+                      'form[action="/localization"]'
+                  ).first
+
+                  if form.count() > 0:
+
+                      print(
+                          form.evaluate(
+                              "el => el.outerHTML.substring(0, 12000)"
+                          )
+                      )
+
+              except Exception as e:
+
+                  print(
+                      "FORM ERROR:",
+                      repr(e),
+                  )
+
+
+              # --------------------------------------------------
+              # FINAL COOKIES
+              # --------------------------------------------------
+
+              print()
+              print("=" * 80)
+              print("FINAL COOKIES")
+              print("=" * 80)
+
+              for cookie in context.cookies():
+
+                  if cookie["name"] in (
+                      "localization",
+                      "cart_currency",
+                  ):
+
+                      print(
+                          cookie["name"],
+                          "=",
+                          cookie["value"],
+                      )
+
+
+              # --------------------------------------------------
+              # FINAL PRODUCT STATE
+              # --------------------------------------------------
+
+              print()
+              print("=" * 80)
+              print("FINAL PRODUCT STATE")
+              print("=" * 80)
+
+              print(
+                  "URL:",
+                  page.url,
+              )
+
+              print(
+                  "TITLE:",
+                  page.title(),
+              )
+
+              body_text = page.locator(
+                  "body"
+              ).inner_text()
+
+              for line in body_text.splitlines():
+
+                  line = line.strip()
+
+                  if not line:
+                      continue
+
+                  if any(
+                      x.lower() in line.lower()
+                      for x in [
+                          "sold out",
+                          "pre-order",
+                          "pre order",
+                          "add to cart",
+                          "123,99",
+                          "124.98",
+                          "$124.98",
+                          "€123,99",
+                          "ships:",
+                      ]
+                  ):
+
+                      print(
+                          repr(line)
+                      )
+
+
+              # --------------------------------------------------
+              # END
+              # --------------------------------------------------
+
+              print()
+              print("=" * 80)
+              print("END")
+              print("=" * 80)
 
               browser.close()
 
-              # Fail the GitHub Action if the parser is wrong.
-              if passed != total:
-                  raise SystemExit(1)
-
           PY
-
-          python test_parser.py

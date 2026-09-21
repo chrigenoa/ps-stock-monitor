@@ -19,27 +19,29 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install dependencies
+      - name: Install Playwright
         run: |
           python -m pip install --upgrade pip
           pip install playwright
           python -m playwright install chromium --with-deps
 
-      - name: Test Shopify EU storefront
+      - name: Test Shopify Italian market
         run: |
           python - <<'PY'
           from playwright.sync_api import sync_playwright
 
-          URL = (
-              "https://www.gtavi-thealbum.com/"
-              "en-eu/products/"
+          BASE_URL = "https://www.gtavi-thealbum.com"
+
+          PRODUCT_PATH = (
+              "/products/"
               "grand-theft-auto-vi-the-album-limited-edition-vinyl"
           )
 
+          PRODUCT_URL = BASE_URL + PRODUCT_PATH
+
           print("=" * 80)
-          print("SHOPIFY PLAYWRIGHT EU TEST")
+          print("SHOPIFY ITALIAN MARKET TEST")
           print("=" * 80)
-          print(f"TARGET URL: {URL}")
           print()
 
           with sync_playwright() as p:
@@ -68,9 +70,128 @@ jobs:
 
               page = context.new_page()
 
-              print("Navigating...")
-              page.goto(
-                  URL,
+              # ----------------------------------------------------------
+              # 1. Apriamo il dominio principale
+              # ----------------------------------------------------------
+
+              print("STEP 1 - OPEN SHOP")
+
+              response = page.goto(
+                  BASE_URL,
+                  wait_until="domcontentloaded",
+                  timeout=60000,
+              )
+
+              page.wait_for_timeout(3000)
+
+              print(f"HTTP STATUS: {response.status if response else 'N/A'}")
+              print(f"CURRENT URL: {page.url}")
+
+              # ----------------------------------------------------------
+              # 2. Mostriamo il cookie localization PRIMA del cambio
+              # ----------------------------------------------------------
+
+              print()
+              print("=" * 80)
+              print("COOKIES BEFORE LOCALIZATION")
+              print("=" * 80)
+
+              for cookie in context.cookies():
+                  if cookie["name"] in (
+                      "localization",
+                      "cart_currency",
+                  ):
+                      print(
+                          f"{cookie['name']} = "
+                          f"{cookie['value']}"
+                      )
+
+              # ----------------------------------------------------------
+              # 3. Shopify Localization
+              #
+              # Shopify documenta il POST:
+              #
+              # /localization
+              #
+              # con:
+              # country_code
+              # language_code
+              # _method=PUT
+              # ----------------------------------------------------------
+
+              print()
+              print("=" * 80)
+              print("STEP 2 - FORCE ITALY")
+              print("=" * 80)
+
+              localization_result = page.evaluate(
+                  """
+                  async () => {
+
+                      const form = new URLSearchParams();
+
+                      form.append("_method", "PUT");
+                      form.append("country_code", "IT");
+                      form.append("language_code", "EN");
+
+                      const response = await fetch(
+                          "/localization",
+                          {
+                              method: "POST",
+                              headers: {
+                                  "Content-Type":
+                                      "application/x-www-form-urlencoded"
+                              },
+                              body: form.toString(),
+                              credentials: "same-origin",
+                              redirect: "manual"
+                          }
+                      );
+
+                      return {
+                          status: response.status,
+                          type: response.type,
+                          location: response.headers.get("location")
+                      };
+                  }
+                  """
+              )
+
+              print("Localization response:")
+              print(localization_result)
+
+              # ----------------------------------------------------------
+              # 4. Aspettiamo che Shopify aggiorni i cookie
+              # ----------------------------------------------------------
+
+              page.wait_for_timeout(3000)
+
+              print()
+              print("=" * 80)
+              print("COOKIES AFTER LOCALIZATION")
+              print("=" * 80)
+
+              for cookie in context.cookies():
+                  if cookie["name"] in (
+                      "localization",
+                      "cart_currency",
+                  ):
+                      print(
+                          f"{cookie['name']} = "
+                          f"{cookie['value']}"
+                      )
+
+              # ----------------------------------------------------------
+              # 5. Ora apriamo direttamente il prodotto
+              # ----------------------------------------------------------
+
+              print()
+              print("=" * 80)
+              print("STEP 3 - OPEN PRODUCT")
+              print("=" * 80)
+
+              response = page.goto(
+                  PRODUCT_URL,
                   wait_until="domcontentloaded",
                   timeout=60000,
               )
@@ -78,16 +199,24 @@ jobs:
               page.wait_for_timeout(5000)
 
               print()
-              print("=" * 80)
-              print("CURRENT URL")
-              print("=" * 80)
+              print("HTTP STATUS:")
+              print(
+                  response.status
+                  if response
+                  else "N/A"
+              )
+
+              print()
+              print("CURRENT URL:")
               print(page.url)
 
               print()
-              print("=" * 80)
-              print("PAGE TITLE")
-              print("=" * 80)
+              print("PAGE TITLE:")
               print(page.title())
+
+              # ----------------------------------------------------------
+              # 6. Testo prodotto
+              # ----------------------------------------------------------
 
               print()
               print("=" * 80)
@@ -105,6 +234,7 @@ jobs:
                   "add to bag",
                   "123,99",
                   "124,98",
+                  "124.98",
                   "€",
                   "$",
                   "ships",
@@ -113,6 +243,7 @@ jobs:
               found_lines = set()
 
               for line in body_text.splitlines():
+
                   line = line.strip()
 
                   if not line:
@@ -127,6 +258,10 @@ jobs:
               for line in sorted(found_lines):
                   print(repr(line))
 
+              # ----------------------------------------------------------
+              # 7. Pulsanti visibili
+              # ----------------------------------------------------------
+
               print()
               print("=" * 80)
               print("VISIBLE BUTTONS")
@@ -135,13 +270,16 @@ jobs:
               buttons = page.locator("button")
 
               for i in range(buttons.count()):
+
                   button = buttons.nth(i)
 
                   try:
+
                       if not button.is_visible():
                           continue
 
                       text = button.inner_text().strip()
+
                       disabled = button.is_disabled()
 
                       print(
@@ -151,55 +289,15 @@ jobs:
                       )
 
                   except Exception as e:
+
                       print(
                           f"BUTTON {i}: "
                           f"unable to inspect: {e}"
                       )
 
-              print()
-              print("=" * 80)
-              print("LINKS")
-              print("=" * 80)
-
-              links = page.locator("a")
-
-              for i in range(min(links.count(), 100)):
-                  link = links.nth(i)
-
-                  try:
-                      if not link.is_visible():
-                          continue
-
-                      text = link.inner_text().strip()
-                      href = link.get_attribute("href")
-
-                      if text:
-                          print(
-                              f"LINK {i}: "
-                              f"text={text!r} "
-                              f"href={href!r}"
-                          )
-
-                  except Exception:
-                      pass
-
-              print()
-              print("=" * 80)
-              print("COOKIES")
-              print("=" * 80)
-
-              cookies = context.cookies()
-
-              for cookie in cookies:
-                  name = cookie.get("name")
-                  value = cookie.get("value")
-
-                  # Non stampiamo valori potenzialmente sensibili.
-                  if name:
-                      print(
-                          f"COOKIE: {name} "
-                          f"(value length={len(value)})"
-                      )
+              # ----------------------------------------------------------
+              # 8. Controllo HTML
+              # ----------------------------------------------------------
 
               print()
               print("=" * 80)
@@ -214,19 +312,42 @@ jobs:
                   "sold out",
                   "Pre-Order",
                   "Pre-order",
+                  "Pre-Order Now",
                   "Add To Cart",
                   "Add to cart",
                   "123,99",
+                  "€123,99",
                   "124.98",
                   "$124.98",
-                  "€123,99",
               ]
 
               for check in checks:
+
                   print(
                       f"{check!r}: "
                       f"{check.lower() in html.lower()}"
                   )
+
+              # ----------------------------------------------------------
+              # 9. Cookie finale
+              # ----------------------------------------------------------
+
+              print()
+              print("=" * 80)
+              print("FINAL LOCALIZATION COOKIES")
+              print("=" * 80)
+
+              for cookie in context.cookies():
+
+                  if cookie["name"] in (
+                      "localization",
+                      "cart_currency",
+                  ):
+
+                      print(
+                          f"{cookie['name']} = "
+                          f"{cookie['value']}"
+                      )
 
               print()
               print("=" * 80)
@@ -234,4 +355,5 @@ jobs:
               print("=" * 80)
 
               browser.close()
+
           PY

@@ -3,6 +3,9 @@ name: Stock Monitor Test
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   test-monitor:
     runs-on: ubuntu-latest

@@ -1,17 +1,17 @@
-name: PlayStation Direct - Multi Product Test
+name: Playwright DOM Diagnostic
 
 on:
   workflow_dispatch:
 
 jobs:
-  playwright-test:
+  diagnose:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -20,488 +20,303 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install playwright
-          python -m playwright install --with-deps chromium
+          playwright install chromium --with-deps
 
-      - name: Test PlayStation Direct
+      - name: Run DOM diagnostic
         run: |
-          python - <<'PY'
-          import asyncio
+          cat > diagnose_dom.py <<'PY'
+          from playwright.sync_api import sync_playwright
           import re
           import time
 
-          from playwright.async_api import async_playwright
-
-
           PRODUCTS = [
               {
-                  "name": "Wolverine Battle Yellow - Console Covers",
-                  "url": "https://direct.playstation.com/it-it/buy-accessories/playstation5-pro-console-covers-marvels-wolverine-battle-yellow-limited-edition",
-              },
-              {
-                  "name": "PlayStation 5 Pro Console",
-                  "url": "https://direct.playstation.com/it-it/buy-consoles/playstation5-pro-console",
-              },
-              {
-                  "name": "DualSense Wolverine Battle Yellow",
-                  "url": "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-marvels-wolverine-battle-yellow-limited-edition-for-ps5-pc-mac-mobile",
-              },
-              {
-                  "name": "DualSense GTA VI Black",
-                  "url": "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-grand-theft-auto-vi-black-limited-edition-for-ps5-pc-mac-mobile",
-              },
-              {
-                  "name": "DualSense GTA VI White",
-                  "url": "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-grand-theft-auto-vi-white-limited-edition-for-ps5-pc-mac-mobile",
-              },
-              {
-                  "name": "DualSense Wolverine Adamantium",
+                  "name": "Wolverine Adamantium",
                   "url": "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-marvels-wolverine-adamantium-limited-edition-for-ps5-pc-mac-mobile",
+                  "expected": "AVAILABLE",
+              },
+              {
+                  "name": "Wolverine Battle Yellow",
+                  "url": "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-marvels-wolverine-battle-yellow-limited-edition-for-ps5-pc-mac-mobile",
+                  "expected": "OUT_OF_STOCK",
               },
           ]
 
-
-          CTA_PATTERNS = [
-              re.compile(r"aggiungi al carrello", re.I),
-              re.compile(r"acquista", re.I),
-              re.compile(r"preordina", re.I),
-              re.compile(r"compra", re.I),
-          ]
-
-
-          UNAVAILABLE_PATTERNS = [
-              re.compile(r"al momento non disponibile", re.I),
-              re.compile(r"non disponibile", re.I),
-              re.compile(r"esaurito", re.I),
-              re.compile(r"temporaneamente non disponibile", re.I),
-          ]
-
-
-          def clean(text):
+          def clean_text(text):
               if not text:
                   return ""
               return re.sub(r"\s+", " ", text).strip()
 
+          def truncate(text, length=300):
+              text = clean_text(text)
+              if len(text) > length:
+                  return text[:length] + "..."
+              return text
 
-          async def safe_text(locator):
-              try:
-                  return clean(await locator.inner_text())
-              except Exception:
-                  return ""
-
-
-          async def inspect_product(page, product):
-              start = time.perf_counter()
-
-              print()
-              print("=" * 80)
-              print(f"PRODOTTO: {product['name']}")
-              print("=" * 80)
-              print(f"URL: {product['url']}")
-
-              try:
-                  response = await page.goto(
-                      product["url"],
-                      wait_until="domcontentloaded",
-                      timeout=45000,
-                  )
-
-                  status = response.status if response else None
-
-                  print(f"HTTP status: {status}")
-
-                  # Non aspettiamo networkidle: il sito continua
-                  # ad effettuare richieste anche dopo il caricamento.
-                  await page.wait_for_timeout(3000)
-
-                  final_url = page.url
-                  title = await page.title()
-
-                  print(f"Final URL: {final_url}")
-                  print(f"Titolo: {clean(title)}")
-
-                  # --------------------------------------------------
-                  # 1. Titolo principale
-                  # --------------------------------------------------
-
-                  h1_text = ""
-                  h1_count = await page.locator("h1").count()
-
-                  for i in range(h1_count):
-                      text = await safe_text(page.locator("h1").nth(i))
-
-                      if text:
-                          h1_text = text
-                          break
-
-                  print(
-                      f"H1 prodotto: "
-                      f"{h1_text[:250] if h1_text else '(non trovato)'}"
-                  )
-
-                  # --------------------------------------------------
-                  # 2. Testo visibile della pagina
-                  # --------------------------------------------------
-
-                  body_text = await safe_text(page.locator("body"))
-
-                  unavailable_matches = []
-
-                  for pattern in UNAVAILABLE_PATTERNS:
-                      if pattern.search(body_text):
-                          unavailable_matches.append(pattern.pattern)
-
-                  print(
-                      "Testo 'non disponibile': "
-                      + (
-                          "PRESENTE"
-                          if unavailable_matches
-                          else "assente"
-                      )
-                  )
-
-                  if unavailable_matches:
-                      print(
-                          "Pattern trovati:",
-                          ", ".join(unavailable_matches),
-                      )
-
-                  # --------------------------------------------------
-                  # 3. Tutti i CTA della pagina
-                  # --------------------------------------------------
-
-                  buttons = page.locator("button")
-                  button_count = await buttons.count()
-
-                  print(f"Numero totale button: {button_count}")
-                  print()
-                  print("BUTTON RILEVANTI:")
-
-                  relevant_buttons = []
-
-                  for i in range(button_count):
-                      button = buttons.nth(i)
-
-                      try:
-                          text = clean(await button.inner_text())
-                      except Exception:
-                          text = ""
-
-                      if not text:
-                          continue
-
-                      is_cta = any(
-                          pattern.search(text)
-                          for pattern in CTA_PATTERNS
-                      )
-
-                      if not is_cta:
-                          continue
-
-                      try:
-                          visible = await button.is_visible()
-                      except Exception:
-                          visible = False
-
-                      try:
-                          enabled = await button.is_enabled()
-                      except Exception:
-                          enabled = False
-
-                      relevant_buttons.append(
-                          {
-                              "index": i,
-                              "text": text,
-                              "visible": visible,
-                              "enabled": enabled,
+          def interesting_attributes(element):
+              attrs = element.evaluate("""
+                  el => {
+                      const result = {};
+                      for (const attr of el.attributes) {
+                          if (
+                              attr.name === 'id' ||
+                              attr.name === 'class' ||
+                              attr.name === 'role' ||
+                              attr.name.startsWith('data-') ||
+                              attr.name.startsWith('aria-')
+                          ) {
+                              result[attr.name] = attr.value;
                           }
-                      )
-
-                      print(
-                          f"  [{i}] "
-                          f"visible={visible} "
-                          f"enabled={enabled} "
-                          f"text={text[:180]}"
-                      )
-
-                  if not relevant_buttons:
-                      print("  Nessun CTA rilevante trovato.")
-
-                  # --------------------------------------------------
-                  # 4. Cerchiamo il CTA associato al prodotto principale
-                  #
-                  # IMPORTANTE:
-                  # non utilizziamo tutti i CTA della pagina.
-                  # Risaliamo dal primo H1 per cercare il contenitore
-                  # del prodotto principale.
-                  # --------------------------------------------------
-
-                  product_ctas = []
-
-                  if h1_count > 0 and h1_text:
-                      h1 = page.locator("h1").first
-                      ancestor = h1
-
-                      for level in range(8):
-                          try:
-                              ancestor = ancestor.locator("..")
-                              count = await ancestor.locator("button").count()
-
-                              if count == 0:
-                                  continue
-
-                              print()
-                              print(
-                                  f"CONTENITORE PRODOTTO - "
-                                  f"livello DOM {level + 1}: "
-                                  f"{count} button"
-                              )
-
-                              current_ctas = []
-
-                              for j in range(count):
-                                  btn = ancestor.locator("button").nth(j)
-
-                                  try:
-                                      text = clean(
-                                          await btn.inner_text()
-                                      )
-                                  except Exception:
-                                      text = ""
-
-                                  if not text:
-                                      continue
-
-                                  is_cta = any(
-                                      pattern.search(text)
-                                      for pattern in CTA_PATTERNS
-                                  )
-
-                                  if not is_cta:
-                                      continue
-
-                                  try:
-                                      visible = await btn.is_visible()
-                                  except Exception:
-                                      visible = False
-
-                                  try:
-                                      enabled = await btn.is_enabled()
-                                  except Exception:
-                                      enabled = False
-
-                                  current_ctas.append(
-                                      {
-                                          "text": text,
-                                          "visible": visible,
-                                          "enabled": enabled,
-                                          "level": level + 1,
-                                      }
-                                  )
-
-                                  print(
-                                      f"  CTA: "
-                                      f"visible={visible} "
-                                      f"enabled={enabled} "
-                                      f"text={text[:180]}"
-                                  )
-
-                              if current_ctas:
-                                  product_ctas = current_ctas
-                                  break
-
-                          except Exception as e:
-                              print(
-                                  f"Errore analisi contenitore: {e}"
-                              )
-                              break
-
-                  # --------------------------------------------------
-                  # 5. Determinazione diagnostica
-                  # --------------------------------------------------
-
-                  visible_enabled_product_ctas = [
-                      cta
-                      for cta in product_ctas
-                      if cta["visible"] and cta["enabled"]
-                  ]
-
-                  visible_product_ctas = [
-                      cta
-                      for cta in product_ctas
-                      if cta["visible"]
-                  ]
-
-                  page_has_unavailable = bool(unavailable_matches)
-
-                  if (
-                      visible_enabled_product_ctas
-                      and not page_has_unavailable
-                  ):
-                      result = "AVAILABLE"
-
-                  elif (
-                      page_has_unavailable
-                      and not visible_enabled_product_ctas
-                  ):
-                      result = "OUT_OF_STOCK"
-
-                  elif (
-                      visible_product_ctas
-                      and page_has_unavailable
-                  ):
-                      result = "UNKNOWN"
-
-                  elif visible_enabled_product_ctas:
-                      result = "AVAILABLE"
-
-                  else:
-                      result = "UNKNOWN"
-
-                  elapsed = time.perf_counter() - start
-
-                  print()
-                  print("-" * 80)
-                  print(f"RISULTATO DIAGNOSTICO: {result}")
-                  print(f"TEMPO: {elapsed:.2f} secondi")
-                  print("-" * 80)
-
-                  return {
-                      "name": product["name"],
-                      "status": status,
-                      "result": result,
-                      "elapsed": elapsed,
+                      }
+                      return result;
                   }
+              """)
+              return attrs
 
-              except Exception as e:
-                  elapsed = time.perf_counter() - start
+          def describe_button(button, index):
+              try:
+                  text = clean_text(button.inner_text(timeout=1000))
+              except Exception:
+                  text = ""
 
-                  print()
-                  print(f"ERRORE: {type(e).__name__}: {e}")
-                  print(f"TEMPO: {elapsed:.2f} secondi")
-                  print("-" * 80)
+              try:
+                  visible = button.is_visible()
+              except Exception:
+                  visible = False
 
-                  return {
-                      "name": product["name"],
-                      "status": None,
-                      "result": "ERROR",
-                      "elapsed": elapsed,
-                  }
+              try:
+                  enabled = button.is_enabled()
+              except Exception:
+                  enabled = False
 
+              attrs = interesting_attributes(button)
 
-          async def main():
-              overall_start = time.perf_counter()
-
-              async with async_playwright() as p:
-
-                  print("Avvio Chromium...")
-
-                  browser_start = time.perf_counter()
-
-                  browser = await p.chromium.launch(
-                      headless=True,
-                      args=[
-                          "--disable-dev-shm-usage",
-                          "--no-sandbox",
-                      ],
+              try:
+                  outer = button.evaluate(
+                      "el => el.outerHTML.substring(0, 1200)"
                   )
-
-                  print(
-                      "Browser avviato in "
-                      f"{time.perf_counter() - browser_start:.2f} secondi"
-                  )
-
-                  context = await browser.new_context(
-                      locale="it-IT",
-                      viewport={
-                          "width": 1366,
-                          "height": 768,
-                      },
-                      user_agent=(
-                          "Mozilla/5.0 (X11; Linux x86_64) "
-                          "AppleWebKit/537.36 "
-                          "(KHTML, like Gecko) "
-                          "Chrome/140.0.0.0 Safari/537.36"
-                      ),
-                  )
-
-                  page = await context.new_page()
-
-                  results = []
-
-                  for product in PRODUCTS:
-                      result = await inspect_product(page, product)
-                      results.append(result)
-
-                      # Piccola pausa tra le pagine.
-                      await page.wait_for_timeout(1000)
-
-                  await browser.close()
-
-              # ------------------------------------------------------
-              # RIEPILOGO FINALE
-              # ------------------------------------------------------
-
-              print()
-              print()
-              print("#" * 80)
-              print("RIEPILOGO FINALE")
-              print("#" * 80)
-
-              for result in results:
-                  print(
-                      f"{result['result']:15} | "
-                      f"HTTP={str(result['status']):3} | "
-                      f"{result['elapsed']:.2f}s | "
-                      f"{result['name']}"
-                  )
-
-              print("#" * 80)
+              except Exception:
+                  outer = ""
 
               print(
-                  f"TEMPO TOTALE: "
-                  f"{time.perf_counter() - overall_start:.2f} secondi"
+                  f"      BUTTON [{index}] "
+                  f"visible={visible} "
+                  f"enabled={enabled} "
+                  f"text={text!r}"
               )
 
-              print("#" * 80)
+              if attrs:
+                  print(f"        attrs={attrs}")
 
-              # ------------------------------------------------------
-              # TEST POSITIVO: ADAMANTIUM
-              # ------------------------------------------------------
+              print(f"        html={truncate(outer, 800)}")
 
-              adamantium = next(
-                  (
-                      r
-                      for r in results
-                      if r["name"] == "DualSense Wolverine Adamantium"
-                  ),
-                  None,
-              )
+          def inspect_ancestor(page, ancestor, level):
+              tag = ancestor.evaluate("el => el.tagName.toLowerCase()")
+              attrs = interesting_attributes(ancestor)
+
+              try:
+                  text = ancestor.inner_text(timeout=1000)
+              except Exception:
+                  text = ""
+
+              try:
+                  buttons = ancestor.locator("button")
+                  button_count = buttons.count()
+              except Exception:
+                  button_count = 0
 
               print()
-              print("=" * 80)
+              print("=" * 100)
+              print(f"ANCESTOR LEVEL {level}")
+              print(f"TAG: {tag}")
+              print(f"ATTRS: {attrs}")
+              print(f"BUTTON COUNT: {button_count}")
+              print(f"TEXT: {truncate(text, 1000)}")
 
-              if (
-                  adamantium
-                  and adamantium["result"] == "AVAILABLE"
-              ):
-                  print(
-                      "TEST POSITIVO: "
-                      "Wolverine Adamantium rilevato come AVAILABLE"
+              for i in range(min(button_count, 20)):
+                  try:
+                      describe_button(buttons.nth(i), i)
+                  except Exception as exc:
+                      print(f"      BUTTON [{i}] ERROR: {exc}")
+
+              try:
+                  outer = ancestor.evaluate(
+                      "el => el.outerHTML.substring(0, 5000)"
                   )
-              else:
-                  print(
-                      "ATTENZIONE: "
-                      "Wolverine Adamantium NON è stato "
-                      "rilevato come AVAILABLE."
-                  )
+                  print(f"OUTER HTML:\n{outer}")
+              except Exception as exc:
+                  print(f"OUTER HTML ERROR: {exc}")
 
-                  print(
-                      "Il parser richiede un'ulteriore analisi "
-                      "prima di essere usato nel bot definitivo."
-                  )
+          with sync_playwright() as p:
+              browser = p.chromium.launch(
+                  headless=True,
+                  args=[
+                      "--disable-dev-shm-usage",
+                      "--no-sandbox",
+                  ],
+              )
 
-              print("=" * 80)
+              context = browser.new_context(
+                  locale="it-IT",
+                  viewport={"width": 1440, "height": 1000},
+              )
 
+              page = context.new_page()
 
-          asyncio.run(main())
+              for product in PRODUCTS:
+                  print()
+                  print()
+                  print("#" * 110)
+                  print(f"# PRODUCT: {product['name']}")
+                  print(f"# EXPECTED: {product['expected']}")
+                  print(f"# URL: {product['url']}")
+                  print("#" * 110)
+
+                  start = time.time()
+
+                  try:
+                      response = page.goto(
+                          product["url"],
+                          wait_until="domcontentloaded",
+                          timeout=30000,
+                      )
+
+                      elapsed = time.time() - start
+
+                      status = response.status if response else "NO RESPONSE"
+
+                      print(f"\nHTTP STATUS: {status}")
+                      print(f"NAVIGATION TIME: {elapsed:.2f}s")
+                      print(f"FINAL URL: {page.url}")
+                      print(f"TITLE: {page.title()}")
+
+                      # Allow client-side rendering to settle.
+                      page.wait_for_timeout(2000)
+
+                      print("\n" + "-" * 100)
+                      print("PAGE-LEVEL INFORMATION")
+                      print("-" * 100)
+
+                      try:
+                          body_text = clean_text(page.locator("body").inner_text())
+                          print(
+                              "PAGE CONTAINS 'non disponibile':",
+                              "non disponibile" in body_text.lower()
+                          )
+                          print(
+                              "PAGE CONTAINS 'aggiungi al carrello':",
+                              "aggiungi al carrello" in body_text.lower()
+                          )
+                      except Exception as exc:
+                          print(f"Body text error: {exc}")
+
+                      # Find H1.
+                      h1 = page.locator("h1").first
+
+                      if h1.count() == 0:
+                          print("\nERROR: No H1 found.")
+                          continue
+
+                      h1_text = clean_text(h1.inner_text())
+                      print(f"\nH1 TEXT:\n{h1_text}")
+
+                      # Print H1 outer HTML.
+                      try:
+                          h1_html = h1.evaluate(
+                              "el => el.outerHTML.substring(0, 3000)"
+                          )
+                          print(f"\nH1 HTML:\n{h1_html}")
+                      except Exception as exc:
+                          print(f"H1 HTML error: {exc}")
+
+                      print()
+                      print("#" * 100)
+                      print("# H1 ANCESTOR CHAIN")
+                      print("# We inspect the first 10 ancestors.")
+                      print("#" * 100)
+
+                      current = h1
+
+                      for level in range(0, 11):
+                          try:
+                              if level == 0:
+                                  ancestor = current
+                              else:
+                                  ancestor = current.locator(
+                                      "xpath=" + "/.." * level
+                                  )
+
+                              if ancestor.count() == 0:
+                                  break
+
+                              inspect_ancestor(page, ancestor, level)
+
+                          except Exception as exc:
+                              print(
+                                  f"\nERROR inspecting ancestor level "
+                                  f"{level}: {exc}"
+                              )
+
+                      # Also print all buttons on the page that contain
+                      # the important CTA words, but DO NOT classify stock.
+                      print()
+                      print("#" * 100)
+                      print("# PAGE BUTTON SUMMARY")
+                      print("#" * 100)
+
+                      buttons = page.locator("button")
+                      total_buttons = buttons.count()
+
+                      print(f"TOTAL BUTTONS: {total_buttons}")
+
+                      interesting = [
+                          "aggiungi al carrello",
+                          "acquista",
+                          "non disponibile",
+                          "preordina",
+                      ]
+
+                      for i in range(total_buttons):
+                          button = buttons.nth(i)
+
+                          try:
+                              text = clean_text(button.inner_text(timeout=500))
+                          except Exception:
+                              continue
+
+                          if not any(
+                              word in text.lower()
+                              for word in interesting
+                          ):
+                              continue
+
+                          try:
+                              visible = button.is_visible()
+                          except Exception:
+                              visible = False
+
+                          try:
+                              enabled = button.is_enabled()
+                          except Exception:
+                              enabled = False
+
+                          try:
+                              attrs = interesting_attributes(button)
+                          except Exception:
+                              attrs = {}
+
+                          print(
+                              f"[PAGE BUTTON {i}] "
+                              f"visible={visible} "
+                              f"enabled={enabled} "
+                              f"text={text!r} "
+                              f"attrs={attrs}"
+                          )
+
+                  except Exception as exc:
+                      print(f"\nPRODUCT ERROR: {exc}")
+
+              browser.close()
           PY
+
+          python diagnose_dom.py

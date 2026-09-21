@@ -1,0 +1,160 @@
+name: Shopify Diagnostic
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install requests
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Inspect Shopify product
+        run: |
+          python - <<'PY'
+          import requests
+          import json
+
+          url = "https://www.gtavi-thealbum.com/en-eu/products/grand-theft-auto-vi-the-album-limited-edition-vinyl"
+
+          headers = {
+              "User-Agent": (
+                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                  "AppleWebKit/537.36 (KHTML, like Gecko) "
+                  "Chrome/153.0.0.0 Safari/537.36"
+              )
+          }
+
+          print("=" * 80)
+          print("SHOPIFY DIAGNOSTIC")
+          print("=" * 80)
+
+          # --------------------------------------------------
+          # 1. Pagina HTML
+          # --------------------------------------------------
+
+          print("\n[1] PAGINA HTML")
+
+          response = requests.get(
+              url,
+              headers=headers,
+              timeout=20,
+          )
+
+          print("HTTP:", response.status_code)
+          print("Content-Type:", response.headers.get("content-type"))
+
+          html = response.text
+
+          print("HTML length:", len(html))
+
+          for phrase in [
+              "Sold out",
+              "Sold Out",
+              "sold out",
+              "Add To Cart",
+              "Add to cart",
+              "Pre-Order",
+          ]:
+              print(
+                  f"{phrase!r}:",
+                  phrase in html
+              )
+
+          # --------------------------------------------------
+          # 2. Endpoint product.js
+          # --------------------------------------------------
+
+          print("\n[2] PRODUCT.JS")
+
+          api_url = (
+              "https://www.gtavi-thealbum.com/"
+              "products/grand-theft-auto-vi-the-album-limited-edition-vinyl.js"
+          )
+
+          response = requests.get(
+              api_url,
+              headers=headers,
+              timeout=20,
+          )
+
+          print("HTTP:", response.status_code)
+          print("Content-Type:", response.headers.get("content-type"))
+
+          data = response.json()
+
+          print("\nProduct:")
+          print("  title:", data.get("title"))
+          print("  available:", data.get("available"))
+
+          print("\nVariants:")
+
+          for variant in data.get("variants", []):
+              print("-" * 60)
+
+              print("  id:", variant.get("id"))
+              print("  title:", variant.get("title"))
+              print("  available:", variant.get("available"))
+              print("  inventory_quantity:", variant.get("inventory_quantity"))
+              print("  inventory_policy:", variant.get("inventory_policy"))
+              print("  inventory_management:", variant.get("inventory_management"))
+              print("  requires_shipping:", variant.get("requires_shipping"))
+              print("  price:", variant.get("price"))
+              print("  sku:", variant.get("sku"))
+
+          # --------------------------------------------------
+          # 3. Endpoint cart.js
+          # --------------------------------------------------
+
+          print("\n[3] CART.JS")
+
+          cart_url = "https://www.gtavi-thealbum.com/cart.js"
+
+          response = requests.get(
+              cart_url,
+              headers=headers,
+              timeout=20,
+          )
+
+          print("HTTP:", response.status_code)
+          print("Content-Type:", response.headers.get("content-type"))
+
+          try:
+              cart = response.json()
+              print("Cart items:", cart.get("item_count"))
+          except Exception:
+              print("Cart response non-JSON")
+
+          # --------------------------------------------------
+          # 4. Endpoint product JSON completo
+          # --------------------------------------------------
+
+          print("\n[4] PRODUCT JSON")
+
+          print(
+              json.dumps(
+                  data,
+                  indent=2,
+                  ensure_ascii=False
+              )
+          )
+
+          print("\n" + "=" * 80)
+          print("END DIAGNOSTIC")
+          print("=" * 80)
+          PY

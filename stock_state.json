@@ -1,1 +1,26 @@
-{}
+{
+  "wolverine_battle_yellow_covers": {
+    "status": "OUT_OF_STOCK",
+    "last_check": "2026-09-21T15:19:26.421960+00:00"
+  },
+  "ps5_pro": {
+    "status": "OUT_OF_STOCK",
+    "last_check": "2026-09-21T15:19:26.421960+00:00"
+  },
+  "wolverine_battle_yellow_controller": {
+    "status": "OUT_OF_STOCK",
+    "last_check": "2026-09-21T15:19:26.421960+00:00"
+  },
+  "gta_vi_black_controller": {
+    "status": "OUT_OF_STOCK",
+    "last_check": "2026-09-21T15:19:26.421960+00:00"
+  },
+  "gta_vi_white_controller": {
+    "status": "OUT_OF_STOCK",
+    "last_check": "2026-09-21T15:19:26.421960+00:00"
+  },
+  "wolverine_adamantium_controller": {
+    "status": "AVAILABLE",
+    "last_check": "2026-09-21T15:19:26.421960+00:00"
+  }
+}

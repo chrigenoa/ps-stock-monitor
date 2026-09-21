@@ -86,11 +86,21 @@ def main():
         print(f"  Previous: {previous}")
         print(f"  Current:  {status}")
 
-        # Notifica SOLO sulla transizione:
+        # ============================================================
+        # NOTIFICA
+        # ============================================================
         #
-        # OUT_OF_STOCK / UNKNOWN / assente
-        #             ↓
-        #         AVAILABLE
+        # Notifichiamo solo quando il prodotto passa da uno stato
+        # diverso da AVAILABLE a AVAILABLE.
+        #
+        # Esempio:
+        #
+        # OUT_OF_STOCK -> AVAILABLE  = NOTIFICA
+        # UNKNOWN      -> AVAILABLE  = NOTIFICA
+        # ERROR        -> AVAILABLE  = NOTIFICA
+        # None         -> AVAILABLE  = NOTIFICA
+        #
+        # AVAILABLE -> AVAILABLE     = NESSUNA NOTIFICA
         #
         if status == "AVAILABLE" and previous != "AVAILABLE":
             notifications.append(
@@ -101,12 +111,43 @@ def main():
                 }
             )
 
-        # Aggiorniamo lo stato anche per UNKNOWN/ERROR,
-        # ma NON generiamo notifiche.
-        state[product_id] = {
-            "status": status,
-            "last_check": now,
-        }
+        # ============================================================
+        # AGGIORNAMENTO STATO
+        # ============================================================
+        #
+        # AVAILABLE e OUT_OF_STOCK sono stati affidabili e quindi
+        # aggiornano lo stato principale.
+        #
+        # UNKNOWN ed ERROR NON devono cancellare l'ultimo stato valido.
+        #
+        # Esempio:
+        #
+        # AVAILABLE -> ERROR
+        #
+        # rimane:
+        #
+        # status = AVAILABLE
+        #
+        # ma registriamo comunque che l'ultima verifica ha prodotto
+        # ERROR.
+        #
+        if status in ("AVAILABLE", "OUT_OF_STOCK"):
+            state[product_id] = {
+                "status": status,
+                "last_check": now,
+                "last_result": status,
+            }
+
+        else:
+            # UNKNOWN / ERROR:
+            # manteniamo lo stato precedente, se esiste.
+            previous_data = state.get(product_id, {})
+
+            state[product_id] = {
+                "status": previous_data.get("status"),
+                "last_check": now,
+                "last_result": status,
+            }
 
         print()
 
@@ -119,6 +160,7 @@ def main():
     if notifications:
         print()
         print("NEW AVAILABLE PRODUCTS:")
+
         for item in notifications:
             print(f"- {item['name']}")
             print(f"  {item['url']}")
@@ -128,8 +170,6 @@ def main():
     print()
     print("=" * 80)
 
-    # Per ora stampiamo le notifiche.
-    # Telegram verrà aggiunto nel passaggio successivo.
     return 0
 
 

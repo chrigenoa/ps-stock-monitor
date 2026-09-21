@@ -1,0 +1,72 @@
+name: Shopify Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shopify-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install requests
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Inspect Shopify product
+        run: |
+          python - <<'PY'
+          import requests
+          import json
+
+          url = "https://www.gtavi-thealbum.com/products/grand-theft-auto-vi-the-album-limited-edition-vinyl.js"
+
+          response = requests.get(
+              url,
+              headers={
+                  "User-Agent": "Mozilla/5.0"
+              },
+              timeout=20,
+          )
+
+          print("HTTP:", response.status_code)
+          print("Content-Type:", response.headers.get("content-type"))
+          print()
+
+          if not response.ok:
+              print(response.text[:2000])
+              response.raise_for_status()
+
+          data = response.json()
+
+          print("TITLE:")
+          print(data.get("title"))
+
+          print()
+          print("PRODUCT AVAILABLE:")
+          print(data.get("available"))
+
+          print()
+          print("VARIANTS:")
+
+          for variant in data.get("variants", []):
+              print(json.dumps({
+                  "id": variant.get("id"),
+                  "title": variant.get("title"),
+                  "available": variant.get("available"),
+                  "inventory_quantity": variant.get("inventory_quantity"),
+                  "inventory_policy": variant.get("inventory_policy"),
+              }, indent=2))
+
+          print()
+          print("RAW PRODUCT JSON:")
+          print(json.dumps(data, indent=2, ensure_ascii=False))
+          PY

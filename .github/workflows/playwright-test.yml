@@ -1,1 +1,460 @@
+name: Playwright PS Direct Test
 
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  playwright-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Playwright
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Run PS Direct browser test
+        run: |
+          python - <<'PY'
+          import asyncio
+          import os
+          import re
+          import time
+          import resource
+          from playwright.async_api import async_playwright
+
+          URL = "https://direct.playstation.com/it-it/buy-accessories/playstation5-pro-console-covers-marvels-wolverine-battle-yellow-limited-edition"
+
+          def mb(value):
+              return value / 1024 / 1024
+
+          async def main():
+              overall_start = time.perf_counter()
+
+              print("=" * 70)
+              print("PLAYSTATION DIRECT - PLAYWRIGHT TEST")
+              print("=" * 70)
+              print(f"Target URL: {URL}")
+              print()
+
+              async with async_playwright() as p:
+                  browser_start = time.perf_counter()
+
+                  browser = await p.chromium.launch(
+                      headless=True,
+                      args=[
+                          "--disable-dev-shm-usage",
+                          "--no-sandbox",
+                      ],
+                  )
+
+                  browser_time = time.perf_counter() - browser_start
+
+                  context = await browser.new_context(
+                      locale="it-IT",
+                      viewport={"width": 1366, "height": 768},
+                      user_agent=(
+                          "Mozilla/5.0 (X11; Linux x86_64) "
+                          "AppleWebKit/537.36 "
+                          "(KHTML, like Gecko) "
+                          "Chrome/140.0.0.0 Safari/537.36"
+                      ),
+                  )
+
+                  page = await context.new_page()
+
+                  navigation_start = time.perf_counter()
+
+                  try:
+                      response = await page.goto(
+                          URL,
+                          wait_until="domcontentloaded",
+                          timeout=45000,
+                      )
+                  except Exception as exc:
+                      print("NAVIGATION ERROR:")
+                      print(repr(exc))
+                      await browser.close()
+                      raise
+
+                  navigation_time = time.perf_counter() - navigation_start
+
+                  print("-" * 70)
+                  print("BROWSER")
+                  print("-" * 70)
+                  print(f"Browser startup: {browser_time:.2f} s")
+                  print()
+
+                  print("-" * 70)
+                  print("HTTP / PAGE")
+                  print("-" * 70)
+                  print(f"HTTP status: {response.status if response else 'N/A'}")
+                  print(f"Final URL: {page.url}")
+                  print(f"Navigation: {navigation_time:.2f} s")
+
+                  try:
+                      await page.wait_for_load_state(
+                          "networkidle",
+                          timeout=15000,
+                      )
+                      print("Network idle: YES")
+                  except Exception:
+                      print("Network idle: TIMEOUT/NOT REACHED")
+
+                  # Give client-side rendering a short additional period.
+                  await page.wait_for_timeout(3000)
+
+                  print()
+
+                  print("-" * 70)
+                  print("PAGE INFORMATION")
+                  print("-" * 70)
+
+                  title = await page.title()
+                  print(f"Title: {title}")
+
+                  html = await page.content()
+                  print(f"Rendered HTML size: {len(html):,} bytes")
+
+                  print()
+
+                  print("-" * 70)
+                  print("BUTTONS")
+                  print("-" * 70)
+
+                  buttons = await page.locator("button").all()
+
+                  print(f"Number of <button> elements: {len(buttons)}")
+
+                  for i, button in enumerate(buttons[:100]):
+                      try:
+                          text = (await button.inner_text()).strip()
+                      except Exception:
+                          text = ""
+
+                      try:
+                          aria = await button.get_attribute("aria-label")
+                      except Exception:
+                          aria = None
+
+                      try:
+                          disabled = await button.is_disabled()
+                      except Exception:
+                          disabled = "unknown"
+
+                      try:
+                          visible = await button.is_visible()
+                      except Exception:
+                          visible = "unknown"
+
+                      if text or aria:
+                          print(
+                              f"[BUTTON {i}] "
+                              f"text={text!r} "
+                              f"aria-label={aria!r} "
+                              f"visible={visible} "
+                              f"disabled={disabled}"
+                          )
+
+                  print()
+
+                  print("-" * 70)
+                  print("INPUTS")
+                  print("-" * 70)
+
+                  inputs = await page.locator("input").all()
+
+                  print(f"Number of <input> elements: {len(inputs)}")
+
+                  for i, element in enumerate(inputs[:100]):
+                      try:
+                          input_type = await element.get_attribute("type")
+                          name = await element.get_attribute("name")
+                          value = await element.get_attribute("value")
+                          aria = await element.get_attribute("aria-label")
+                          disabled = await element.is_disabled()
+                          visible = await element.is_visible()
+
+                          print(
+                              f"[INPUT {i}] "
+                              f"type={input_type!r} "
+                              f"name={name!r} "
+                              f"value={value!r} "
+                              f"aria-label={aria!r} "
+                              f"visible={visible} "
+                              f"disabled={disabled}"
+                          )
+                      except Exception:
+                          pass
+
+                  print()
+
+                  print("-" * 70)
+                  print("PRODUCT / STOCK KEYWORDS")
+                  print("-" * 70)
+
+                  body_text = await page.locator("body").inner_text()
+
+                  keywords = [
+                      "Disponibile",
+                      "Disponibili",
+                      "disponibile",
+                      "disponibili",
+                      "Esaurito",
+                      "esaurito",
+                      "Scorte",
+                      "scorte",
+                      "Aggiungi al carrello",
+                      "aggiungi al carrello",
+                      "Acquista",
+                      "acquista",
+                      "Preordina",
+                      "preordina",
+                      "Non disponibile",
+                      "non disponibile",
+                  ]
+
+                  found = []
+
+                  for keyword in keywords:
+                      if keyword in body_text:
+                          found.append(keyword)
+
+                  if found:
+                      print("Found keywords:")
+                      for keyword in found:
+                          print(f"  - {keyword}")
+                  else:
+                      print("No stock/purchase keywords found in visible body text.")
+
+                  print()
+
+                  print("-" * 70)
+                  print("VISIBLE BODY TEXT - RELEVANT LINES")
+                  print("-" * 70)
+
+                  relevant_words = [
+                      "dispon",
+                      "esaur",
+                      "scort",
+                      "carrell",
+                      "acquist",
+                      "preordin",
+                  ]
+
+                  lines = body_text.splitlines()
+
+                  shown = set()
+
+                  for line in lines:
+                      clean = " ".join(line.split()).strip()
+
+                      if not clean:
+                          continue
+
+                      lower = clean.lower()
+
+                      if any(word in lower for word in relevant_words):
+                          if clean not in shown:
+                              print(clean[:500])
+                              shown.add(clean)
+
+                  print()
+
+                  print("-" * 70)
+                  print("LINKS")
+                  print("-" * 70)
+
+                  links = await page.locator("a").all()
+
+                  relevant_links = []
+
+                  for i, link in enumerate(links):
+                      try:
+                          text = " ".join((await link.inner_text()).split())
+                          href = await link.get_attribute("href")
+                          aria = await link.get_attribute("aria-label")
+                      except Exception:
+                          continue
+
+                      combined = f"{text} {href or ''} {aria or ''}".lower()
+
+                      if any(
+                          word in combined
+                          for word in [
+                              "carrell",
+                              "acquist",
+                              "dispon",
+                              "preordin",
+                          ]
+                      ):
+                          relevant_links.append(
+                              (i, text, href, aria)
+                          )
+
+                  print(
+                      f"Relevant links found: "
+                      f"{len(relevant_links)}"
+                  )
+
+                  for item in relevant_links[:100]:
+                      print(
+                          f"[LINK {item[0]}] "
+                          f"text={item[1]!r} "
+                          f"href={item[2]!r} "
+                          f"aria-label={item[3]!r}"
+                      )
+
+                  print()
+
+                  print("-" * 70)
+                  print("JSON-LD")
+                  print("-" * 70)
+
+                  jsonld_scripts = await page.locator(
+                      'script[type="application/ld+json"]'
+                  ).all()
+
+                  print(
+                      f"JSON-LD blocks: "
+                      f"{len(jsonld_scripts)}"
+                  )
+
+                  for i, script in enumerate(jsonld_scripts):
+                      try:
+                          content = await script.inner_text()
+                          print(
+                              f"[JSON-LD {i}] "
+                              f"{content[:5000]}"
+                          )
+                      except Exception:
+                          pass
+
+                  print()
+
+                  print("-" * 70)
+                  print("PERFORMANCE")
+                  print("-" * 70)
+
+                  performance = await page.evaluate(
+                      """
+                      () => {
+                          const p = performance.getEntriesByType('navigation')[0];
+
+                          if (!p) {
+                              return {};
+                          }
+
+                          return {
+                              domContentLoaded:
+                                  p.domContentLoadedEventEnd -
+                                  p.startTime,
+
+                              loadEvent:
+                                  p.loadEventEnd -
+                                  p.startTime,
+
+                              response:
+                                  p.responseEnd -
+                                  p.startTime,
+
+                              transferSize:
+                                  p.transferSize,
+
+                              encodedBodySize:
+                                  p.encodedBodySize,
+
+                              decodedBodySize:
+                                  p.decodedBodySize
+                          };
+                      }
+                      """
+                  )
+
+                  for key, value in performance.items():
+                      print(f"{key}: {value}")
+
+                  print()
+
+                  print("-" * 70)
+                  print("RESOURCE COUNTS")
+                  print("-" * 70)
+
+                  resources = await page.evaluate(
+                      """
+                      () => performance.getEntriesByType('resource').map(
+                          r => ({
+                              name: r.name,
+                              duration: r.duration,
+                              transferSize: r.transferSize
+                          })
+                      )
+                      """
+                  )
+
+                  print(
+                      f"Resources loaded: "
+                      f"{len(resources)}"
+                  )
+
+                  total_transfer = sum(
+                      r.get("transferSize", 0) or 0
+                      for r in resources
+                  )
+
+                  print(
+                      f"Total reported transfer size: "
+                      f"{total_transfer:,} bytes"
+                  )
+
+                  print()
+
+                  await context.close()
+                  await browser.close()
+
+              overall_time = time.perf_counter() - overall_start
+
+              print("-" * 70)
+              print("MEMORY / PROCESS")
+              print("-" * 70)
+
+              # Linux ru_maxrss is reported in KB.
+              max_rss = resource.getrusage(
+                  resource.RUSAGE_SELF
+              ).ru_maxrss
+
+              print(
+                  f"Python process max RSS: "
+                  f"{mb(max_rss * 1024):.2f} MB"
+              )
+
+              print()
+
+              print("-" * 70)
+              print("FINAL TIMING")
+              print("-" * 70)
+              print(
+                  f"Total test duration: "
+                  f"{overall_time:.2f} s"
+              )
+
+              print()
+              print("=" * 70)
+              print("TEST COMPLETED")
+              print("=" * 70)
+
+          asyncio.run(main())
+          PY

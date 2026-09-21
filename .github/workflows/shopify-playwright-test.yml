@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  shopify-playwright-test:
     runs-on: ubuntu-latest
 
     steps:
@@ -19,18 +19,28 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install Playwright
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install playwright
-          playwright install chromium --with-deps
+          python -m playwright install chromium --with-deps
 
-      - name: Inspect product page
+      - name: Test Shopify EU storefront
         run: |
           python - <<'PY'
           from playwright.sync_api import sync_playwright
 
-          url = "https://www.gtavi-thealbum.com/en-eu/products/grand-theft-auto-vi-the-album-limited-edition-vinyl"
+          URL = (
+              "https://www.gtavi-thealbum.com/"
+              "en-eu/products/"
+              "grand-theft-auto-vi-the-album-limited-edition-vinyl"
+          )
+
+          print("=" * 80)
+          print("SHOPIFY PLAYWRIGHT EU TEST")
+          print("=" * 80)
+          print(f"TARGET URL: {URL}")
+          print()
 
           with sync_playwright() as p:
 
@@ -42,54 +52,89 @@ jobs:
                   ],
               )
 
-              page = browser.new_page(
-                  locale="en-US",
+              context = browser.new_context(
+                  locale="it-IT",
+                  timezone_id="Europe/Rome",
                   viewport={
                       "width": 1440,
                       "height": 1000,
                   },
+                  user_agent=(
+                      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                      "AppleWebKit/537.36 (KHTML, like Gecko) "
+                      "Chrome/153.0.0.0 Safari/537.36"
+                  ),
               )
 
+              page = context.new_page()
+
+              print("Navigating...")
               page.goto(
-                  url,
+                  URL,
                   wait_until="domcontentloaded",
-                  timeout=30000,
+                  timeout=60000,
               )
 
-              page.wait_for_timeout(3000)
+              page.wait_for_timeout(5000)
 
+              print()
               print("=" * 80)
-              print("SHOPIFY PLAYWRIGHT DIAGNOSTIC")
+              print("CURRENT URL")
               print("=" * 80)
+              print(page.url)
 
-              print("\nPAGE TITLE:")
+              print()
+              print("=" * 80)
+              print("PAGE TITLE")
+              print("=" * 80)
               print(page.title())
 
-              print("\nVISIBLE TEXT AROUND PRODUCT:")
+              print()
+              print("=" * 80)
+              print("RELEVANT PRODUCT TEXT")
+              print("=" * 80)
 
               body_text = page.locator("body").inner_text()
+
+              keywords = [
+                  "sold out",
+                  "sold-out",
+                  "pre-order",
+                  "pre order",
+                  "add to cart",
+                  "add to bag",
+                  "123,99",
+                  "124,98",
+                  "€",
+                  "$",
+                  "ships",
+              ]
+
+              found_lines = set()
 
               for line in body_text.splitlines():
                   line = line.strip()
 
-                  if line and any(
-                      x.lower() in line.lower()
-                      for x in [
-                          "sold out",
-                          "add to cart",
-                          "pre-order",
-                          "123,99",
-                          "124",
-                      ]
-                  ):
-                      print(repr(line))
+                  if not line:
+                      continue
 
-              print("\nBUTTONS:")
+                  if any(
+                      keyword.lower() in line.lower()
+                      for keyword in keywords
+                  ):
+                      found_lines.add(line)
+
+              for line in sorted(found_lines):
+                  print(repr(line))
+
+              print()
+              print("=" * 80)
+              print("VISIBLE BUTTONS")
+              print("=" * 80)
 
               buttons = page.locator("button")
 
               for i in range(buttons.count()):
-
                   button = buttons.nth(i)
 
                   try:
@@ -105,34 +150,88 @@ jobs:
                           f"disabled={disabled}"
                       )
 
-                  except Exception:
-                      pass
-
-              print("\nINPUTS:")
-
-              inputs = page.locator("input")
-
-              for i in range(inputs.count()):
-
-                  element = inputs.nth(i)
-
-                  try:
-                      if not element.is_visible():
-                          continue
-
+                  except Exception as e:
                       print(
-                          f"INPUT {i}: "
-                          f"type={element.get_attribute('type')!r} "
-                          f"name={element.get_attribute('name')!r} "
-                          f"value={element.get_attribute('value')!r}"
+                          f"BUTTON {i}: "
+                          f"unable to inspect: {e}"
                       )
 
+              print()
+              print("=" * 80)
+              print("LINKS")
+              print("=" * 80)
+
+              links = page.locator("a")
+
+              for i in range(min(links.count(), 100)):
+                  link = links.nth(i)
+
+                  try:
+                      if not link.is_visible():
+                          continue
+
+                      text = link.inner_text().strip()
+                      href = link.get_attribute("href")
+
+                      if text:
+                          print(
+                              f"LINK {i}: "
+                              f"text={text!r} "
+                              f"href={href!r}"
+                          )
+
                   except Exception:
                       pass
 
-              browser.close()
+              print()
+              print("=" * 80)
+              print("COOKIES")
+              print("=" * 80)
 
-          print("\n" + "=" * 80)
-          print("END")
-          print("=" * 80)
+              cookies = context.cookies()
+
+              for cookie in cookies:
+                  name = cookie.get("name")
+                  value = cookie.get("value")
+
+                  # Non stampiamo valori potenzialmente sensibili.
+                  if name:
+                      print(
+                          f"COOKIE: {name} "
+                          f"(value length={len(value)})"
+                      )
+
+              print()
+              print("=" * 80)
+              print("PRODUCT HTML CHECK")
+              print("=" * 80)
+
+              html = page.locator("body").inner_html()
+
+              checks = [
+                  "Sold out",
+                  "Sold Out",
+                  "sold out",
+                  "Pre-Order",
+                  "Pre-order",
+                  "Add To Cart",
+                  "Add to cart",
+                  "123,99",
+                  "124.98",
+                  "$124.98",
+                  "€123,99",
+              ]
+
+              for check in checks:
+                  print(
+                      f"{check!r}: "
+                      f"{check.lower() in html.lower()}"
+                  )
+
+              print()
+              print("=" * 80)
+              print("END")
+              print("=" * 80)
+
+              browser.close()
           PY

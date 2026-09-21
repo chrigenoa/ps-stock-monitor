@@ -1,10 +1,10 @@
-name: Playwright DOM Diagnostic Short
+name: Playwright Stock Parser Test
 
 on:
   workflow_dispatch:
 
 jobs:
-  diagnose:
+  test-stock-parser:
     runs-on: ubuntu-latest
 
     steps:
@@ -22,170 +22,241 @@ jobs:
           pip install playwright
           playwright install chromium --with-deps
 
-      - name: Diagnose product containers
+      - name: Test PlayStation Direct parser
         run: |
-          cat > diagnose.py <<'PY'
+          cat > test_parser.py <<'PY'
           from playwright.sync_api import sync_playwright
           import re
+          import time
 
           PRODUCTS = [
-              (
-                  "ADAMANTIUM",
-                  "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-marvels-wolverine-adamantium-limited-edition-for-ps5-pc-mac-mobile"
-              ),
-              (
-                  "BATTLE_YELLOW",
-                  "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-marvels-wolverine-battle-yellow-limited-edition-for-ps5-pc-mac-mobile"
-              ),
+              {
+                  "name": "Wolverine Battle Yellow Console Covers",
+                  "url": "https://direct.playstation.com/it-it/buy-accessories/playstation5-pro-console-covers-marvels-wolverine-battle-yellow-limited-edition",
+                  "expected": "OUT_OF_STOCK",
+              },
+              {
+                  "name": "PS5 Pro Console",
+                  "url": "https://direct.playstation.com/it-it/buy-consoles/playstation5-pro-console",
+                  "expected": "OUT_OF_STOCK",
+              },
+              {
+                  "name": "DualSense Wolverine Battle Yellow",
+                  "url": "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-marvels-wolverine-battle-yellow-limited-edition-for-ps5-pc-mac-mobile",
+                  "expected": "OUT_OF_STOCK",
+              },
+              {
+                  "name": "DualSense GTA VI Black",
+                  "url": "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-grand-theft-auto-vi-black-limited-edition-for-ps5-pc-mac-mobile",
+                  "expected": "OUT_OF_STOCK",
+              },
+              {
+                  "name": "DualSense GTA VI White",
+                  "url": "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-grand-theft-auto-vi-white-limited-edition-for-ps5-pc-mac-mobile",
+                  "expected": "OUT_OF_STOCK",
+              },
+              {
+                  "name": "DualSense Wolverine Adamantium",
+                  "url": "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-marvels-wolverine-adamantium-limited-edition-for-ps5-pc-mac-mobile",
+                  "expected": "AVAILABLE",
+              },
           ]
 
-          def clean(s):
-              return re.sub(r"\s+", " ", s or "").strip()
+          def clean(text):
+              return re.sub(r"\s+", " ", text or "").strip()
 
-          def short(s, n=350):
-              s = clean(s)
-              return s if len(s) <= n else s[:n] + "..."
+          def detect_stock(page):
+              """
+              Detects stock using ONLY the main product hero component.
 
-          with sync_playwright() as p:
-              browser = p.chromium.launch(
-                  headless=True,
-                  args=["--no-sandbox", "--disable-dev-shm-usage"]
-              )
+              Important:
+              - We do NOT use page-wide "non disponibile".
+              - We do NOT use generic page-wide "Aggiungi al carrello".
+              - We specifically look for the main product's
+                `.add-to-cart` button.
+              """
 
-              page = browser.new_page(
-                  locale="it-IT",
-                  viewport={"width": 1440, "height": 1000}
-              )
+              h1 = page.locator("h1").first
 
-              for name, url in PRODUCTS:
+              if h1.count() == 0:
+                  return "UNKNOWN", "H1 not found"
 
-                  print()
-                  print("=" * 90)
-                  print(name)
-                  print("=" * 90)
+              # The H1 is directly inside the productHero component.
+              hero = h1.locator("xpath=..")
 
-                  page.goto(
-                      url,
-                      wait_until="domcontentloaded",
-                      timeout=30000
+              if hero.count() == 0:
+                  return "UNKNOWN", "Product hero not found"
+
+              # The main product uses:
+              # .add-to-cart
+              #
+              # Related products use:
+              # .js-add-to-cart
+              #
+              # Therefore we deliberately select only .add-to-cart.
+              buttons = hero.locator("button.add-to-cart")
+
+              count = buttons.count()
+
+              if count == 0:
+                  return "UNKNOWN", "Main add-to-cart button not found"
+
+              visible_buttons = []
+
+              for i in range(count):
+                  button = buttons.nth(i)
+
+                  try:
+                      visible = button.is_visible()
+                  except Exception:
+                      visible = False
+
+                  try:
+                      enabled = button.is_enabled()
+                  except Exception:
+                      enabled = False
+
+                  try:
+                      text = clean(button.inner_text())
+                  except Exception:
+                      text = ""
+
+                  visible_buttons.append(
+                      {
+                          "visible": visible,
+                          "enabled": enabled,
+                          "text": text,
+                      }
                   )
 
-                  page.wait_for_timeout(2000)
+              # Any visible + enabled main-product CTA means available.
+              for button in visible_buttons:
+                  if (
+                      button["visible"]
+                      and button["enabled"]
+                      and "aggiungi al carrello" in button["text"].lower()
+                  ):
+                      return "AVAILABLE", "Visible main add-to-cart"
 
-                  h1 = page.locator("h1").first
+              # If the main CTA exists but is hidden, the product is out of stock.
+              if visible_buttons:
+                  return "OUT_OF_STOCK", "Main add-to-cart hidden"
 
-                  if h1.count() == 0:
-                      print("ERROR: H1 NOT FOUND")
-                      continue
+              return "UNKNOWN", "Unable to determine"
 
-                  h1_text = clean(h1.inner_text())
+          with sync_playwright() as p:
 
-                  print("H1:", h1_text)
+              browser = p.chromium.launch(
+                  headless=True,
+                  args=[
+                      "--no-sandbox",
+                      "--disable-dev-shm-usage",
+                  ],
+              )
 
-                  # Salviamo l'H1 in una variabile JS e risaliamo
-                  # nella struttura DOM.
-                  result = page.evaluate("""
-                  () => {
-                      const h1 = document.querySelector('h1');
+              context = browser.new_context(
+                  locale="it-IT",
+                  viewport={
+                      "width": 1440,
+                      "height": 1000,
+                  },
+              )
 
-                      if (!h1) return [];
+              page = context.new_page()
 
-                      const result = [];
-                      let el = h1;
+              results = []
+              total_start = time.time()
 
-                      for (let level = 0; level <= 8 && el; level++, el = el.parentElement) {
+              print()
+              print("=" * 100)
+              print("PLAYSTATION DIRECT STOCK PARSER TEST")
+              print("=" * 100)
+              print()
 
-                          const buttons = [...el.querySelectorAll('button')];
+              for product in PRODUCTS:
 
-                          const relevantButtons = buttons
-                              .filter(b => {
-                                  const t = (b.innerText || '').trim().toLowerCase();
-                                  return (
-                                      t.includes('aggiungi al carrello') ||
-                                      t.includes('accedi per acquistare') ||
-                                      t.includes('acquista') ||
-                                      t.includes('non disponibile')
-                                  );
-                              })
-                              .map(b => ({
-                                  text: (b.innerText || '').trim(),
-                                  visible: !!(b.offsetWidth || b.offsetHeight || b.getClientRects().length),
-                                  disabled: b.disabled,
-                                  ariaDisabled: b.getAttribute('aria-disabled'),
-                                  class: b.className,
-                                  id: b.id
-                              }));
+                  start = time.time()
 
-                          result.push({
-                              level: level,
-                              tag: el.tagName,
-                              id: el.id,
-                              class: el.className,
-                              role: el.getAttribute('role'),
-                              buttonCount: buttons.length,
-                              relevantButtons: relevantButtons,
-                              text: (el.innerText || '').trim().replace(/\\s+/g, ' ').substring(0, 500)
-                          });
-                      }
+                  try:
+                      response = page.goto(
+                          product["url"],
+                          wait_until="domcontentloaded",
+                          timeout=30000,
+                      )
 
-                      return result;
-                  }
-                  """)
+                      page.wait_for_timeout(1500)
 
-                  for item in result:
+                      status, reason = detect_stock(page)
 
+                      elapsed = time.time() - start
+
+                      expected = product["expected"]
+                      correct = status == expected
+
+                      results.append(correct)
+
+                      symbol = "OK" if correct else "FAIL"
+
+                      print(
+                          f"[{symbol}] "
+                          f"{product['name']}: "
+                          f"{status} "
+                          f"(expected {expected}) "
+                          f"| {elapsed:.2f}s"
+                      )
+
+                      print(f"     reason: {reason}")
+
+                      if response:
+                          print(f"     HTTP: {response.status}")
+
+                      print(f"     URL: {page.url}")
                       print()
-                      print(
-                          f"LEVEL {item['level']} | "
-                          f"<{item['tag'].lower()}> | "
-                          f"id={item['id']!r}"
-                      )
+
+                  except Exception as exc:
+
+                      results.append(False)
 
                       print(
-                          "CLASS:",
-                          short(str(item["class"]), 250)
+                          f"[FAIL] "
+                          f"{product['name']}: ERROR"
                       )
 
-                      print(
-                          "ROLE:",
-                          item["role"]
-                      )
+                      print(f"     {type(exc).__name__}: {exc}")
+                      print()
 
-                      print(
-                          "BUTTON COUNT:",
-                          item["buttonCount"]
-                      )
+              total_time = time.time() - total_start
 
-                      print(
-                          "TEXT:",
-                          short(item["text"])
-                      )
+              print("=" * 100)
+              print("FINAL RESULT")
+              print("=" * 100)
 
-                      for b in item["relevantButtons"]:
-                          print(
-                              "  BUTTON:",
-                              f"visible={b['visible']}",
-                              f"disabled={b['disabled']}",
-                              f"aria-disabled={b['ariaDisabled']!r}",
-                              f"text={b['text']!r}"
-                          )
+              passed = sum(results)
+              total = len(results)
 
-                          if b["class"]:
-                              print(
-                                  "    class:",
-                                  short(str(b["class"]), 200)
-                              )
+              print(
+                  f"Passed: {passed}/{total}"
+              )
 
-                          if b["id"]:
-                              print(
-                                  "    id:",
-                                  b["id"]
-                              )
+              print(
+                  f"Total time: {total_time:.2f}s"
+              )
 
-                  print()
-                  print("-" * 90)
+              print()
+
+              if passed == total:
+                  print("SUCCESS: ALL PARSER TESTS PASSED")
+              else:
+                  print("FAILURE: ONE OR MORE PARSER TESTS FAILED")
+
+              print("=" * 100)
 
               browser.close()
+
+              # Fail the GitHub Action if the parser is wrong.
+              if passed != total:
+                  raise SystemExit(1)
+
           PY
 
-          python diagnose.py
+          python test_parser.py

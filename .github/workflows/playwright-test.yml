@@ -22,13 +22,15 @@ jobs:
           pip install playwright
           python -m playwright install --with-deps chromium
 
-      - name: Run Playwright diagnostic
+      - name: Test PlayStation Direct
         run: |
           python - <<'PY'
           import asyncio
           import re
           import time
+
           from playwright.async_api import async_playwright
+
 
           PRODUCTS = [
               {
@@ -57,12 +59,14 @@ jobs:
               },
           ]
 
+
           CTA_PATTERNS = [
               re.compile(r"aggiungi al carrello", re.I),
               re.compile(r"acquista", re.I),
               re.compile(r"preordina", re.I),
               re.compile(r"compra", re.I),
           ]
+
 
           UNAVAILABLE_PATTERNS = [
               re.compile(r"al momento non disponibile", re.I),
@@ -102,10 +106,11 @@ jobs:
                   )
 
                   status = response.status if response else None
+
                   print(f"HTTP status: {status}")
 
-                  # Il sito continua ad effettuare richieste anche dopo il caricamento.
-                  # Non aspettiamo networkidle perché può non essere raggiunto.
+                  # Non aspettiamo networkidle: il sito continua
+                  # ad effettuare richieste anche dopo il caricamento.
                   await page.wait_for_timeout(3000)
 
                   final_url = page.url
@@ -114,40 +119,55 @@ jobs:
                   print(f"Final URL: {final_url}")
                   print(f"Titolo: {clean(title)}")
 
-                  # ------------------------------------------------------------
-                  # 1. Troviamo il titolo principale del prodotto
-                  # ------------------------------------------------------------
+                  # --------------------------------------------------
+                  # 1. Titolo principale
+                  # --------------------------------------------------
 
                   h1_text = ""
                   h1_count = await page.locator("h1").count()
 
                   for i in range(h1_count):
                       text = await safe_text(page.locator("h1").nth(i))
+
                       if text:
                           h1_text = text
                           break
 
-                  print(f"H1 prodotto: {h1_text[:250] if h1_text else '(non trovato)'}")
+                  print(
+                      f"H1 prodotto: "
+                      f"{h1_text[:250] if h1_text else '(non trovato)'}"
+                  )
 
-                  # ------------------------------------------------------------
+                  # --------------------------------------------------
                   # 2. Testo visibile della pagina
-                  # ------------------------------------------------------------
+                  # --------------------------------------------------
 
                   body_text = await safe_text(page.locator("body"))
 
                   unavailable_matches = []
+
                   for pattern in UNAVAILABLE_PATTERNS:
                       if pattern.search(body_text):
                           unavailable_matches.append(pattern.pattern)
 
                   print(
                       "Testo 'non disponibile': "
-                      + ("PRESENTE" if unavailable_matches else "assente")
+                      + (
+                          "PRESENTE"
+                          if unavailable_matches
+                          else "assente"
+                      )
                   )
 
-                  # ------------------------------------------------------------
-                  # 3. Cerchiamo tutti i CTA
-                  # ------------------------------------------------------------
+                  if unavailable_matches:
+                      print(
+                          "Pattern trovati:",
+                          ", ".join(unavailable_matches),
+                      )
+
+                  # --------------------------------------------------
+                  # 3. Tutti i CTA della pagina
+                  # --------------------------------------------------
 
                   buttons = page.locator("button")
                   button_count = await buttons.count()
@@ -169,7 +189,10 @@ jobs:
                       if not text:
                           continue
 
-                      is_cta = any(pattern.search(text) for pattern in CTA_PATTERNS)
+                      is_cta = any(
+                          pattern.search(text)
+                          for pattern in CTA_PATTERNS
+                      )
 
                       if not is_cta:
                           continue
@@ -203,91 +226,98 @@ jobs:
                   if not relevant_buttons:
                       print("  Nessun CTA rilevante trovato.")
 
-                  # ------------------------------------------------------------
-                  # 4. Tentativo di individuare il CTA nel contenitore
-                  #    del prodotto principale
-                  # ------------------------------------------------------------
+                  # --------------------------------------------------
+                  # 4. Cerchiamo il CTA associato al prodotto principale
+                  #
+                  # IMPORTANTE:
+                  # non utilizziamo tutti i CTA della pagina.
+                  # Risaliamo dal primo H1 per cercare il contenitore
+                  # del prodotto principale.
+                  # --------------------------------------------------
 
                   product_ctas = []
 
                   if h1_count > 0 and h1_text:
                       h1 = page.locator("h1").first
+                      ancestor = h1
 
-                      try:
-                          # Risaliamo alcuni livelli DOM dal titolo H1.
-                          # L'obiettivo è trovare il contenitore della scheda
-                          # prodotto principale, senza considerare i prodotti
-                          # correlati più sotto nella pagina.
-                          ancestor = h1
+                      for level in range(8):
+                          try:
+                              ancestor = ancestor.locator("..")
+                              count = await ancestor.locator("button").count()
 
-                          for level in range(6):
-                              try:
-                                  ancestor = ancestor.locator("..")
-                                  count = await ancestor.locator("button").count()
+                              if count == 0:
+                                  continue
 
-                                  if count > 0:
-                                      print()
-                                      print(
-                                          f"Contenitore prodotto - livello DOM {level + 1}: "
-                                          f"{count} button"
+                              print()
+                              print(
+                                  f"CONTENITORE PRODOTTO - "
+                                  f"livello DOM {level + 1}: "
+                                  f"{count} button"
+                              )
+
+                              current_ctas = []
+
+                              for j in range(count):
+                                  btn = ancestor.locator("button").nth(j)
+
+                                  try:
+                                      text = clean(
+                                          await btn.inner_text()
                                       )
+                                  except Exception:
+                                      text = ""
 
-                                      for j in range(count):
-                                          btn = ancestor.locator("button").nth(j)
+                                  if not text:
+                                      continue
 
-                                          try:
-                                              text = clean(await btn.inner_text())
-                                          except Exception:
-                                              text = ""
+                                  is_cta = any(
+                                      pattern.search(text)
+                                      for pattern in CTA_PATTERNS
+                                  )
 
-                                          if not text:
-                                              continue
+                                  if not is_cta:
+                                      continue
 
-                                          is_cta = any(
-                                              pattern.search(text)
-                                              for pattern in CTA_PATTERNS
-                                          )
+                                  try:
+                                      visible = await btn.is_visible()
+                                  except Exception:
+                                      visible = False
 
-                                          if not is_cta:
-                                              continue
+                                  try:
+                                      enabled = await btn.is_enabled()
+                                  except Exception:
+                                      enabled = False
 
-                                          try:
-                                              visible = await btn.is_visible()
-                                          except Exception:
-                                              visible = False
+                                  current_ctas.append(
+                                      {
+                                          "text": text,
+                                          "visible": visible,
+                                          "enabled": enabled,
+                                          "level": level + 1,
+                                      }
+                                  )
 
-                                          try:
-                                              enabled = await btn.is_enabled()
-                                          except Exception:
-                                              enabled = False
+                                  print(
+                                      f"  CTA: "
+                                      f"visible={visible} "
+                                      f"enabled={enabled} "
+                                      f"text={text[:180]}"
+                                  )
 
-                                          product_ctas.append(
-                                              {
-                                                  "text": text,
-                                                  "visible": visible,
-                                                  "enabled": enabled,
-                                                  "level": level + 1,
-                                              }
-                                          )
-
-                                          print(
-                                              f"  CTA: "
-                                              f"visible={visible} "
-                                              f"enabled={enabled} "
-                                              f"text={text[:180]}"
-                                          )
-
-                                      # Se abbiamo trovato un contenitore con CTA,
-                                      # non è necessario continuare troppo in alto.
-                                      if product_ctas:
-                                          break
+                              if current_ctas:
+                                  product_ctas = current_ctas
+                                  break
 
                           except Exception as e:
-                              print(f"Errore analisi contenitore: {e}")
+                              print(
+                                  f"Errore analisi contenitore: {e}"
+                              )
+                              break
 
-                  # ------------------------------------------------------------
-                  # 5. Determinazione diagnostica dello stato
-                  # ------------------------------------------------------------
+                  # --------------------------------------------------
+                  # 5. Determinazione diagnostica
+                  # --------------------------------------------------
 
                   visible_enabled_product_ctas = [
                       cta
@@ -303,14 +333,22 @@ jobs:
 
                   page_has_unavailable = bool(unavailable_matches)
 
-                  if visible_enabled_product_ctas and not page_has_unavailable:
+                  if (
+                      visible_enabled_product_ctas
+                      and not page_has_unavailable
+                  ):
                       result = "AVAILABLE"
 
-                  elif page_has_unavailable and not visible_enabled_product_ctas:
+                  elif (
+                      page_has_unavailable
+                      and not visible_enabled_product_ctas
+                  ):
                       result = "OUT_OF_STOCK"
 
-                  elif visible_product_ctas and page_has_unavailable:
-                      # Situazione ambigua: non prendiamo decisioni automatiche.
+                  elif (
+                      visible_product_ctas
+                      and page_has_unavailable
+                  ):
                       result = "UNKNOWN"
 
                   elif visible_enabled_product_ctas:
@@ -356,6 +394,7 @@ jobs:
               async with async_playwright() as p:
 
                   print("Avvio Chromium...")
+
                   browser_start = time.perf_counter()
 
                   browser = await p.chromium.launch(
@@ -367,7 +406,7 @@ jobs:
                   )
 
                   print(
-                      f"Browser avviato in "
+                      "Browser avviato in "
                       f"{time.perf_counter() - browser_start:.2f} secondi"
                   )
 
@@ -394,14 +433,13 @@ jobs:
                       results.append(result)
 
                       # Piccola pausa tra le pagine.
-                      # Evita di effettuare richieste consecutive troppo ravvicinate.
                       await page.wait_for_timeout(1000)
 
                   await browser.close()
 
-              # ------------------------------------------------------------
+              # ------------------------------------------------------
               # RIEPILOGO FINALE
-              # ------------------------------------------------------------
+              # ------------------------------------------------------
 
               print()
               print()
@@ -418,25 +456,17 @@ jobs:
                   )
 
               print("#" * 80)
+
               print(
                   f"TEMPO TOTALE: "
                   f"{time.perf_counter() - overall_start:.2f} secondi"
               )
+
               print("#" * 80)
 
-              # ------------------------------------------------------------
-              # TEST ATTESO
-              # ------------------------------------------------------------
-              #
-              # Il prodotto Wolverine Adamantium è stato aggiunto proprio
-              # come caso positivo.
-              #
-              # Non facciamo fallire il workflow se altri prodotti risultano
-              # UNKNOWN: per ora stiamo diagnosticando il DOM.
-              #
-              # Però segnaliamo chiaramente se Adamantium non viene rilevato
-              # come AVAILABLE.
-              # ------------------------------------------------------------
+              # ------------------------------------------------------
+              # TEST POSITIVO: ADAMANTIUM
+              # ------------------------------------------------------
 
               adamantium = next(
                   (
@@ -450,16 +480,24 @@ jobs:
               print()
               print("=" * 80)
 
-              if adamantium and adamantium["result"] == "AVAILABLE":
-                  print("TEST POSITIVO: Wolverine Adamantium rilevato come AVAILABLE")
+              if (
+                  adamantium
+                  and adamantium["result"] == "AVAILABLE"
+              ):
+                  print(
+                      "TEST POSITIVO: "
+                      "Wolverine Adamantium rilevato come AVAILABLE"
+                  )
               else:
                   print(
-                      "ATTENZIONE: Wolverine Adamantium NON è stato "
+                      "ATTENZIONE: "
+                      "Wolverine Adamantium NON è stato "
                       "rilevato come AVAILABLE."
                   )
+
                   print(
-                      "Il parser richiede un'ulteriore analisi prima "
-                      "di essere usato nel bot definitivo."
+                      "Il parser richiede un'ulteriore analisi "
+                      "prima di essere usato nel bot definitivo."
                   )
 
               print("=" * 80)

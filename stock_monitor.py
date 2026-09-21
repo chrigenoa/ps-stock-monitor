@@ -3,6 +3,8 @@ import os
 import sys
 from datetime import datetime, timezone
 
+import requests
+
 from sites.playstation_direct import check_stock
 
 
@@ -63,6 +65,53 @@ def save_state(state):
         )
 
 
+def send_telegram(notifications):
+    """
+    Invia su Telegram tutte le nuove disponibilità rilevate.
+    """
+
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+
+    if not token or not chat_id:
+        print("Telegram credentials not configured.")
+        return False
+
+    telegram_url = f"https://api.telegram.org/bot{token}/sendMessage"
+
+    success = True
+
+    for item in notifications:
+
+        message = (
+            "🟢 DISPONIBILE\n\n"
+            f"{item['name']}\n\n"
+            f"{item['url']}"
+        )
+
+        try:
+            response = requests.post(
+                telegram_url,
+                data={
+                    "chat_id": chat_id,
+                    "text": message,
+                },
+                timeout=20,
+            )
+
+            print(f"Telegram HTTP: {response.status_code}")
+            print(f"Telegram response: {response.text}")
+
+            if not response.ok:
+                success = False
+
+        except Exception as e:
+            print(f"Telegram error: {e}")
+            success = False
+
+    return success
+
+
 def main():
     state = load_state()
 
@@ -89,19 +138,7 @@ def main():
         # ============================================================
         # NOTIFICA
         # ============================================================
-        #
-        # Notifichiamo solo quando il prodotto passa da uno stato
-        # diverso da AVAILABLE a AVAILABLE.
-        #
-        # Esempio:
-        #
-        # OUT_OF_STOCK -> AVAILABLE  = NOTIFICA
-        # UNKNOWN      -> AVAILABLE  = NOTIFICA
-        # ERROR        -> AVAILABLE  = NOTIFICA
-        # None         -> AVAILABLE  = NOTIFICA
-        #
-        # AVAILABLE -> AVAILABLE     = NESSUNA NOTIFICA
-        #
+
         if status == "AVAILABLE" and previous != "AVAILABLE":
             notifications.append(
                 {
@@ -114,23 +151,7 @@ def main():
         # ============================================================
         # AGGIORNAMENTO STATO
         # ============================================================
-        #
-        # AVAILABLE e OUT_OF_STOCK sono stati affidabili e quindi
-        # aggiornano lo stato principale.
-        #
-        # UNKNOWN ed ERROR NON devono cancellare l'ultimo stato valido.
-        #
-        # Esempio:
-        #
-        # AVAILABLE -> ERROR
-        #
-        # rimane:
-        #
-        # status = AVAILABLE
-        #
-        # ma registriamo comunque che l'ultima verifica ha prodotto
-        # ERROR.
-        #
+
         if status in ("AVAILABLE", "OUT_OF_STOCK"):
             state[product_id] = {
                 "status": status,
@@ -140,7 +161,8 @@ def main():
 
         else:
             # UNKNOWN / ERROR:
-            # manteniamo lo stato precedente, se esiste.
+            # manteniamo l'ultimo stato affidabile.
+
             previous_data = state.get(product_id, {})
 
             state[product_id] = {
@@ -164,6 +186,17 @@ def main():
         for item in notifications:
             print(f"- {item['name']}")
             print(f"  {item['url']}")
+
+        print()
+        print("Sending Telegram notifications...")
+
+        telegram_ok = send_telegram(notifications)
+
+        if telegram_ok:
+            print("Telegram notifications sent successfully.")
+        else:
+            print("Telegram notification failed.")
+
     else:
         print("No new availability detected.")
 

@@ -1,4 +1,4 @@
-name: Playwright DOM Diagnostic
+name: Playwright DOM Diagnostic Short
 
 on:
   workflow_dispatch:
@@ -22,301 +22,170 @@ jobs:
           pip install playwright
           playwright install chromium --with-deps
 
-      - name: Run DOM diagnostic
+      - name: Diagnose product containers
         run: |
-          cat > diagnose_dom.py <<'PY'
+          cat > diagnose.py <<'PY'
           from playwright.sync_api import sync_playwright
           import re
-          import time
 
           PRODUCTS = [
-              {
-                  "name": "Wolverine Adamantium",
-                  "url": "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-marvels-wolverine-adamantium-limited-edition-for-ps5-pc-mac-mobile",
-                  "expected": "AVAILABLE",
-              },
-              {
-                  "name": "Wolverine Battle Yellow",
-                  "url": "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-marvels-wolverine-battle-yellow-limited-edition-for-ps5-pc-mac-mobile",
-                  "expected": "OUT_OF_STOCK",
-              },
+              (
+                  "ADAMANTIUM",
+                  "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-marvels-wolverine-adamantium-limited-edition-for-ps5-pc-mac-mobile"
+              ),
+              (
+                  "BATTLE_YELLOW",
+                  "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-marvels-wolverine-battle-yellow-limited-edition-for-ps5-pc-mac-mobile"
+              ),
           ]
 
-          def clean_text(text):
-              if not text:
-                  return ""
-              return re.sub(r"\s+", " ", text).strip()
+          def clean(s):
+              return re.sub(r"\s+", " ", s or "").strip()
 
-          def truncate(text, length=300):
-              text = clean_text(text)
-              if len(text) > length:
-                  return text[:length] + "..."
-              return text
-
-          def interesting_attributes(element):
-              attrs = element.evaluate("""
-                  el => {
-                      const result = {};
-                      for (const attr of el.attributes) {
-                          if (
-                              attr.name === 'id' ||
-                              attr.name === 'class' ||
-                              attr.name === 'role' ||
-                              attr.name.startsWith('data-') ||
-                              attr.name.startsWith('aria-')
-                          ) {
-                              result[attr.name] = attr.value;
-                          }
-                      }
-                      return result;
-                  }
-              """)
-              return attrs
-
-          def describe_button(button, index):
-              try:
-                  text = clean_text(button.inner_text(timeout=1000))
-              except Exception:
-                  text = ""
-
-              try:
-                  visible = button.is_visible()
-              except Exception:
-                  visible = False
-
-              try:
-                  enabled = button.is_enabled()
-              except Exception:
-                  enabled = False
-
-              attrs = interesting_attributes(button)
-
-              try:
-                  outer = button.evaluate(
-                      "el => el.outerHTML.substring(0, 1200)"
-                  )
-              except Exception:
-                  outer = ""
-
-              print(
-                  f"      BUTTON [{index}] "
-                  f"visible={visible} "
-                  f"enabled={enabled} "
-                  f"text={text!r}"
-              )
-
-              if attrs:
-                  print(f"        attrs={attrs}")
-
-              print(f"        html={truncate(outer, 800)}")
-
-          def inspect_ancestor(page, ancestor, level):
-              tag = ancestor.evaluate("el => el.tagName.toLowerCase()")
-              attrs = interesting_attributes(ancestor)
-
-              try:
-                  text = ancestor.inner_text(timeout=1000)
-              except Exception:
-                  text = ""
-
-              try:
-                  buttons = ancestor.locator("button")
-                  button_count = buttons.count()
-              except Exception:
-                  button_count = 0
-
-              print()
-              print("=" * 100)
-              print(f"ANCESTOR LEVEL {level}")
-              print(f"TAG: {tag}")
-              print(f"ATTRS: {attrs}")
-              print(f"BUTTON COUNT: {button_count}")
-              print(f"TEXT: {truncate(text, 1000)}")
-
-              for i in range(min(button_count, 20)):
-                  try:
-                      describe_button(buttons.nth(i), i)
-                  except Exception as exc:
-                      print(f"      BUTTON [{i}] ERROR: {exc}")
-
-              try:
-                  outer = ancestor.evaluate(
-                      "el => el.outerHTML.substring(0, 5000)"
-                  )
-                  print(f"OUTER HTML:\n{outer}")
-              except Exception as exc:
-                  print(f"OUTER HTML ERROR: {exc}")
+          def short(s, n=350):
+              s = clean(s)
+              return s if len(s) <= n else s[:n] + "..."
 
           with sync_playwright() as p:
               browser = p.chromium.launch(
                   headless=True,
-                  args=[
-                      "--disable-dev-shm-usage",
-                      "--no-sandbox",
-                  ],
+                  args=["--no-sandbox", "--disable-dev-shm-usage"]
               )
 
-              context = browser.new_context(
+              page = browser.new_page(
                   locale="it-IT",
-                  viewport={"width": 1440, "height": 1000},
+                  viewport={"width": 1440, "height": 1000}
               )
 
-              page = context.new_page()
+              for name, url in PRODUCTS:
 
-              for product in PRODUCTS:
                   print()
-                  print()
-                  print("#" * 110)
-                  print(f"# PRODUCT: {product['name']}")
-                  print(f"# EXPECTED: {product['expected']}")
-                  print(f"# URL: {product['url']}")
-                  print("#" * 110)
+                  print("=" * 90)
+                  print(name)
+                  print("=" * 90)
 
-                  start = time.time()
+                  page.goto(
+                      url,
+                      wait_until="domcontentloaded",
+                      timeout=30000
+                  )
 
-                  try:
-                      response = page.goto(
-                          product["url"],
-                          wait_until="domcontentloaded",
-                          timeout=30000,
+                  page.wait_for_timeout(2000)
+
+                  h1 = page.locator("h1").first
+
+                  if h1.count() == 0:
+                      print("ERROR: H1 NOT FOUND")
+                      continue
+
+                  h1_text = clean(h1.inner_text())
+
+                  print("H1:", h1_text)
+
+                  # Salviamo l'H1 in una variabile JS e risaliamo
+                  # nella struttura DOM.
+                  result = page.evaluate("""
+                  () => {
+                      const h1 = document.querySelector('h1');
+
+                      if (!h1) return [];
+
+                      const result = [];
+                      let el = h1;
+
+                      for (let level = 0; level <= 8 && el; level++, el = el.parentElement) {
+
+                          const buttons = [...el.querySelectorAll('button')];
+
+                          const relevantButtons = buttons
+                              .filter(b => {
+                                  const t = (b.innerText || '').trim().toLowerCase();
+                                  return (
+                                      t.includes('aggiungi al carrello') ||
+                                      t.includes('accedi per acquistare') ||
+                                      t.includes('acquista') ||
+                                      t.includes('non disponibile')
+                                  );
+                              })
+                              .map(b => ({
+                                  text: (b.innerText || '').trim(),
+                                  visible: !!(b.offsetWidth || b.offsetHeight || b.getClientRects().length),
+                                  disabled: b.disabled,
+                                  ariaDisabled: b.getAttribute('aria-disabled'),
+                                  class: b.className,
+                                  id: b.id
+                              }));
+
+                          result.push({
+                              level: level,
+                              tag: el.tagName,
+                              id: el.id,
+                              class: el.className,
+                              role: el.getAttribute('role'),
+                              buttonCount: buttons.length,
+                              relevantButtons: relevantButtons,
+                              text: (el.innerText || '').trim().replace(/\\s+/g, ' ').substring(0, 500)
+                          });
+                      }
+
+                      return result;
+                  }
+                  """)
+
+                  for item in result:
+
+                      print()
+                      print(
+                          f"LEVEL {item['level']} | "
+                          f"<{item['tag'].lower()}> | "
+                          f"id={item['id']!r}"
                       )
 
-                      elapsed = time.time() - start
+                      print(
+                          "CLASS:",
+                          short(str(item["class"]), 250)
+                      )
 
-                      status = response.status if response else "NO RESPONSE"
+                      print(
+                          "ROLE:",
+                          item["role"]
+                      )
 
-                      print(f"\nHTTP STATUS: {status}")
-                      print(f"NAVIGATION TIME: {elapsed:.2f}s")
-                      print(f"FINAL URL: {page.url}")
-                      print(f"TITLE: {page.title()}")
+                      print(
+                          "BUTTON COUNT:",
+                          item["buttonCount"]
+                      )
 
-                      # Allow client-side rendering to settle.
-                      page.wait_for_timeout(2000)
+                      print(
+                          "TEXT:",
+                          short(item["text"])
+                      )
 
-                      print("\n" + "-" * 100)
-                      print("PAGE-LEVEL INFORMATION")
-                      print("-" * 100)
-
-                      try:
-                          body_text = clean_text(page.locator("body").inner_text())
+                      for b in item["relevantButtons"]:
                           print(
-                              "PAGE CONTAINS 'non disponibile':",
-                              "non disponibile" in body_text.lower()
+                              "  BUTTON:",
+                              f"visible={b['visible']}",
+                              f"disabled={b['disabled']}",
+                              f"aria-disabled={b['ariaDisabled']!r}",
+                              f"text={b['text']!r}"
                           )
-                          print(
-                              "PAGE CONTAINS 'aggiungi al carrello':",
-                              "aggiungi al carrello" in body_text.lower()
-                          )
-                      except Exception as exc:
-                          print(f"Body text error: {exc}")
 
-                      # Find H1.
-                      h1 = page.locator("h1").first
-
-                      if h1.count() == 0:
-                          print("\nERROR: No H1 found.")
-                          continue
-
-                      h1_text = clean_text(h1.inner_text())
-                      print(f"\nH1 TEXT:\n{h1_text}")
-
-                      # Print H1 outer HTML.
-                      try:
-                          h1_html = h1.evaluate(
-                              "el => el.outerHTML.substring(0, 3000)"
-                          )
-                          print(f"\nH1 HTML:\n{h1_html}")
-                      except Exception as exc:
-                          print(f"H1 HTML error: {exc}")
-
-                      print()
-                      print("#" * 100)
-                      print("# H1 ANCESTOR CHAIN")
-                      print("# We inspect the first 10 ancestors.")
-                      print("#" * 100)
-
-                      current = h1
-
-                      for level in range(0, 11):
-                          try:
-                              if level == 0:
-                                  ancestor = current
-                              else:
-                                  ancestor = current.locator(
-                                      "xpath=" + "/.." * level
-                                  )
-
-                              if ancestor.count() == 0:
-                                  break
-
-                              inspect_ancestor(page, ancestor, level)
-
-                          except Exception as exc:
+                          if b["class"]:
                               print(
-                                  f"\nERROR inspecting ancestor level "
-                                  f"{level}: {exc}"
+                                  "    class:",
+                                  short(str(b["class"]), 200)
                               )
 
-                      # Also print all buttons on the page that contain
-                      # the important CTA words, but DO NOT classify stock.
-                      print()
-                      print("#" * 100)
-                      print("# PAGE BUTTON SUMMARY")
-                      print("#" * 100)
+                          if b["id"]:
+                              print(
+                                  "    id:",
+                                  b["id"]
+                              )
 
-                      buttons = page.locator("button")
-                      total_buttons = buttons.count()
-
-                      print(f"TOTAL BUTTONS: {total_buttons}")
-
-                      interesting = [
-                          "aggiungi al carrello",
-                          "acquista",
-                          "non disponibile",
-                          "preordina",
-                      ]
-
-                      for i in range(total_buttons):
-                          button = buttons.nth(i)
-
-                          try:
-                              text = clean_text(button.inner_text(timeout=500))
-                          except Exception:
-                              continue
-
-                          if not any(
-                              word in text.lower()
-                              for word in interesting
-                          ):
-                              continue
-
-                          try:
-                              visible = button.is_visible()
-                          except Exception:
-                              visible = False
-
-                          try:
-                              enabled = button.is_enabled()
-                          except Exception:
-                              enabled = False
-
-                          try:
-                              attrs = interesting_attributes(button)
-                          except Exception:
-                              attrs = {}
-
-                          print(
-                              f"[PAGE BUTTON {i}] "
-                              f"visible={visible} "
-                              f"enabled={enabled} "
-                              f"text={text!r} "
-                              f"attrs={attrs}"
-                          )
-
-                  except Exception as exc:
-                      print(f"\nPRODUCT ERROR: {exc}")
+                  print()
+                  print("-" * 90)
 
               browser.close()
           PY
 
-          python diagnose_dom.py
+          python diagnose.py

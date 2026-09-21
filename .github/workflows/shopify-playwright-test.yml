@@ -23,20 +23,27 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install playwright
-          python -m playwright install chromium --with-deps
+          playwright install --with-deps chromium
 
-      - name: Inspect Shopify market selector
+      - name: Run Shopify market diagnostic
         run: |
           python - <<'PY'
           from playwright.sync_api import sync_playwright
 
-          BASE_URL = "https://www.gtavi-thealbum.com"
 
           PRODUCT_URL = (
-              BASE_URL
-              + "/en-eu/products/"
-              + "grand-theft-auto-vi-the-album-limited-edition-vinyl"
+              "https://www.gtavi-thealbum.com/"
+              "en-eu/products/"
+              "grand-theft-auto-vi-the-album-limited-edition-vinyl"
           )
+
+          BASE_URL = "https://www.gtavi-thealbum.com"
+
+          LOCALIZATION_JS_URL = (
+              BASE_URL
+              + "/cdn/shop/t/5/assets/localization-form.js"
+          )
+
 
           with sync_playwright() as p:
 
@@ -55,13 +62,19 @@ jobs:
                       "width": 1440,
                       "height": 1000,
                   },
+                  user_agent=(
+                      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                      "AppleWebKit/537.36 (KHTML, like Gecko) "
+                      "Chrome/153.0.0.0 Safari/537.36"
+                  ),
               )
 
               page = context.new_page()
 
-              # ----------------------------------------------------------
-              # OPEN EU PRODUCT URL
-              # ----------------------------------------------------------
+
+              # --------------------------------------------------
+              # OPEN PRODUCT
+              # --------------------------------------------------
 
               print("=" * 80)
               print("OPENING EU PRODUCT")
@@ -83,13 +96,341 @@ jobs:
               print("TITLE:")
               print(page.title())
 
-              # ----------------------------------------------------------
-              # COOKIES
-              # ----------------------------------------------------------
+
+              # --------------------------------------------------
+              # INITIAL COOKIES
+              # --------------------------------------------------
 
               print()
               print("=" * 80)
-              print("LOCALIZATION COOKIES")
+              print("INITIAL LOCALIZATION COOKIES")
+              print("=" * 80)
+
+              for cookie in context.cookies():
+                  if cookie["name"] in (
+                      "localization",
+                      "cart_currency",
+                  ):
+                      print(
+                          cookie["name"],
+                          "=",
+                          cookie["value"],
+                      )
+
+
+              # --------------------------------------------------
+              # LOCALIZATION FORM
+              # --------------------------------------------------
+
+              print()
+              print("=" * 80)
+              print("LOCALIZATION FORM")
+              print("=" * 80)
+
+              localization_form = page.locator(
+                  'form[action="/localization"]'
+              )
+
+              print(
+                  "Localization forms:",
+                  localization_form.count(),
+              )
+
+              if localization_form.count() > 0:
+
+                  form = localization_form.first
+
+                  print()
+                  print("FORM HTML:")
+
+                  print(
+                      form.evaluate(
+                          "el => el.outerHTML.substring(0, 12000)"
+                      )
+                  )
+
+                  print()
+                  print("INPUTS:")
+
+                  inputs = form.locator("input")
+
+                  for i in range(inputs.count()):
+
+                      inp = inputs.nth(i)
+
+                      print(
+                          f"INPUT {i}: "
+                          f"name={inp.get_attribute('name')!r} "
+                          f"type={inp.get_attribute('type')!r} "
+                          f"value={inp.get_attribute('value')!r}"
+                      )
+
+                  print()
+                  print("BUTTONS:")
+
+                  buttons = form.locator("button")
+
+                  for i in range(buttons.count()):
+
+                      button = buttons.nth(i)
+
+                      try:
+
+                          print(
+                              f"BUTTON {i}: "
+                              f"text={button.inner_text().strip()!r} "
+                              f"name={button.get_attribute('name')!r} "
+                              f"value={button.get_attribute('value')!r} "
+                              f"type={button.get_attribute('type')!r}"
+                          )
+
+                      except Exception:
+                          pass
+
+
+              # --------------------------------------------------
+              # ITALY ELEMENT
+              # --------------------------------------------------
+
+              print()
+              print("=" * 80)
+              print("ITALY ELEMENT")
+              print("=" * 80)
+
+              italy = page.get_by_text(
+                  "Italy",
+                  exact=True,
+              )
+
+              print(
+                  "Italy elements:",
+                  italy.count(),
+              )
+
+              for i in range(
+                  min(italy.count(), 5)
+              ):
+
+                  element = italy.nth(i)
+
+                  try:
+
+                      print()
+                      print(
+                          f"ITALY {i}:"
+                      )
+
+                      print(
+                          element.evaluate(
+                              """
+                              el => {
+                                  let p = el;
+                                  let result = [];
+
+                                  for (
+                                      let i = 0;
+                                      i < 5 && p;
+                                      i++,
+                                      p = p.parentElement
+                                  ) {
+                                      result.push({
+                                          tag: p.tagName,
+                                          id: p.id,
+                                          class: p.className,
+                                          outer:
+                                              p.outerHTML
+                                              .substring(0, 3000)
+                                      });
+                                  }
+
+                                  return result;
+                              }
+                              """
+                          )
+                      )
+
+                  except Exception as e:
+
+                      print(
+                          "ERROR:",
+                          repr(e),
+                      )
+
+
+              # --------------------------------------------------
+              # LOCALIZATION JAVASCRIPT
+              # --------------------------------------------------
+
+              print()
+              print("=" * 80)
+              print("LOCALIZATION JS")
+              print("=" * 80)
+
+              try:
+
+                  response = page.request.get(
+                      LOCALIZATION_JS_URL,
+                      timeout=30000,
+                  )
+
+                  print(
+                      "HTTP:",
+                      response.status,
+                  )
+
+                  js_text = response.text()
+
+                  print()
+                  print(js_text[:20000])
+
+              except Exception as e:
+
+                  print(
+                      "ERROR:",
+                      repr(e),
+                  )
+
+
+              # --------------------------------------------------
+              # CLICK ITALY
+              # --------------------------------------------------
+
+              print()
+              print("=" * 80)
+              print("SELECTING ITALY")
+              print("=" * 80)
+
+              try:
+
+                  italy = page.get_by_text(
+                      "Italy",
+                      exact=True,
+                  ).first
+
+                  print(
+                      "Visible:",
+                      italy.is_visible(),
+                  )
+
+                  print(
+                      "Enabled:",
+                      italy.is_enabled(),
+                  )
+
+                  print(
+                      "Clicking Italy..."
+                  )
+
+                  italy.click(
+                      force=True,
+                  )
+
+                  page.wait_for_timeout(5000)
+
+                  print()
+                  print("AFTER ITALY CLICK")
+
+                  print(
+                      "URL:",
+                      page.url,
+                  )
+
+                  print()
+                  print("COOKIES:")
+
+                  for cookie in context.cookies():
+
+                      if cookie["name"] in (
+                          "localization",
+                          "cart_currency",
+                      ):
+
+                          print(
+                              cookie["name"],
+                              "=",
+                              cookie["value"],
+                          )
+
+
+                  print()
+                  print("PRODUCT TEXT:")
+
+                  body_text = page.locator(
+                      "body"
+                  ).inner_text()
+
+                  for line in body_text.splitlines():
+
+                      line = line.strip()
+
+                      if not line:
+                          continue
+
+                      if any(
+                          x.lower() in line.lower()
+                          for x in [
+                              "sold out",
+                              "pre-order",
+                              "pre order",
+                              "add to cart",
+                              "123,99",
+                              "124.98",
+                              "$124.98",
+                              "€123,99",
+                              "italy",
+                          ]
+                      ):
+
+                          print(
+                              repr(line)
+                          )
+
+              except Exception as e:
+
+                  print(
+                      "ITALY CLICK ERROR:",
+                      repr(e),
+                  )
+
+
+              # --------------------------------------------------
+              # CHECK LOCALIZATION FORM AFTER CLICK
+              # --------------------------------------------------
+
+              print()
+              print("=" * 80)
+              print("LOCALIZATION FORM AFTER ITALY CLICK")
+              print("=" * 80)
+
+              try:
+
+                  form = page.locator(
+                      'form[action="/localization"]'
+                  ).first
+
+                  if form.count() > 0:
+
+                      print(
+                          form.evaluate(
+                              "el => el.outerHTML.substring(0, 12000)"
+                          )
+                      )
+
+              except Exception as e:
+
+                  print(
+                      "FORM ERROR:",
+                      repr(e),
+                  )
+
+
+              # --------------------------------------------------
+              # FINAL COOKIES
+              # --------------------------------------------------
+
+              print()
+              print("=" * 80)
+              print("FINAL COOKIES")
               print("=" * 80)
 
               for cookie in context.cookies():
@@ -102,330 +443,27 @@ jobs:
                       print(
                           cookie["name"],
                           "=",
-                          cookie["value"]
+                          cookie["value"],
                       )
 
-              # ----------------------------------------------------------
-              # ALL LINKS CONTAINING COUNTRY / MARKET / LANGUAGE
-              # ----------------------------------------------------------
+
+              # --------------------------------------------------
+              # FINAL PRODUCT STATE
+              # --------------------------------------------------
 
               print()
               print("=" * 80)
-              print("POSSIBLE MARKET / COUNTRY LINKS")
-              print("=" * 80)
-
-              links = page.locator("a")
-
-              for i in range(links.count()):
-
-                  link = links.nth(i)
-
-                  try:
-
-                      href = link.get_attribute("href")
-
-                      text = link.inner_text().strip()
-
-                      if not href:
-                          continue
-
-                      combined = (
-                          text
-                          + " "
-                          + href
-                      ).lower()
-
-                      keywords = [
-                          "ital",
-                          "united states",
-                          "states",
-                          "country",
-                          "market",
-                          "local",
-                          "currency",
-                          "europe",
-                          "france",
-                          "germany",
-                          "spain",
-                          "united kingdom",
-                          "canada",
-                          "usd",
-                          "eur",
-                          "gbp",
-                      ]
-
-                      if any(
-                          keyword in combined
-                          for keyword in keywords
-                      ):
-
-                          print(
-                              f"LINK {i}: "
-                              f"text={text!r} "
-                              f"href={href!r}"
-                          )
-
-                  except Exception:
-                      pass
-
-              # ----------------------------------------------------------
-              # ALL FORMS
-              # ----------------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("FORMS")
-              print("=" * 80)
-
-              forms = page.locator("form")
-
-              for i in range(forms.count()):
-
-                  form = forms.nth(i)
-
-                  try:
-
-                      action = form.get_attribute("action")
-
-                      method = form.get_attribute("method")
-
-                      print(
-                          f"FORM {i}: "
-                          f"method={method!r} "
-                          f"action={action!r}"
-                      )
-
-                      selects = form.locator("select")
-
-                      for j in range(selects.count()):
-
-                          select = selects.nth(j)
-
-                          print(
-                              f"  SELECT {j}: "
-                              f"name={select.get_attribute('name')!r}"
-                          )
-
-                          options = select.locator("option")
-
-                          for k in range(options.count()):
-
-                              option = options.nth(k)
-
-                              print(
-                                  "    OPTION:",
-                                  f"text={option.inner_text().strip()!r}",
-                                  f"value={option.get_attribute('value')!r}"
-                              )
-
-                  except Exception:
-                      pass
-
-              # ----------------------------------------------------------
-              # SELECT ELEMENTS ON ENTIRE PAGE
-              # ----------------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("ALL SELECT ELEMENTS")
-              print("=" * 80)
-
-              selects = page.locator("select")
-
-              for i in range(selects.count()):
-
-                  select = selects.nth(i)
-
-                  try:
-
-                      print(
-                          f"SELECT {i}: "
-                          f"name={select.get_attribute('name')!r} "
-                          f"id={select.get_attribute('id')!r}"
-                      )
-
-                      options = select.locator("option")
-
-                      for j in range(options.count()):
-
-                          option = options.nth(j)
-
-                          print(
-                              f"  OPTION {j}: "
-                              f"text={option.inner_text().strip()!r} "
-                              f"value={option.get_attribute('value')!r}"
-                          )
-
-                  except Exception:
-                      pass
-
-              # ----------------------------------------------------------
-              # ELEMENTS CONTAINING COUNTRY
-              # ----------------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("ELEMENTS CONTAINING COUNTRY / REGION")
-              print("=" * 80)
-
-              body = page.locator("body")
-
-              country_texts = [
-                  "United States",
-                  "Italy",
-                  "Italia",
-                  "USD",
-                  "EUR",
-                  "Europe",
-                  "Country",
-                  "Region",
-              ]
-
-              for text in country_texts:
-
-                  try:
-
-                      locator = page.get_by_text(
-                          text,
-                          exact=False
-                      )
-
-                      count = locator.count()
-
-                      print(
-                          f"{text!r}: "
-                          f"{count} element(s)"
-                      )
-
-                      for i in range(min(count, 5)):
-
-                          element = locator.nth(i)
-
-                          try:
-
-                              print(
-                                  "  ",
-                                  element.evaluate(
-                                      """
-                                      el => ({
-                                          tag: el.tagName,
-                                          text: el.innerText,
-                                          outer: el.outerHTML.substring(0, 1000)
-                                      })
-                                      """
-                                  )
-                              )
-
-                          except Exception:
-                              pass
-
-                  except Exception:
-                      pass
-
-              # ----------------------------------------------------------
-              # SEARCH RAW HTML FOR LOCALIZATION ENDPOINTS
-              # ----------------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("LOCALIZATION REFERENCES IN HTML")
-              print("=" * 80)
-
-              html = page.locator("html").inner_html()
-
-              html_lower = html.lower()
-
-              search_terms = [
-                  "/localization",
-                  "country_code",
-                  "localization",
-                  "country-selector",
-                  "country_selector",
-                  "market",
-                  "markets",
-                  "geolocation",
-                  "currency",
-              ]
-
-              for term in search_terms:
-
-                  print(
-                      f"{term!r}: "
-                      f"{term.lower() in html_lower}"
-                  )
-
-              # ----------------------------------------------------------
-              # NETWORK REQUESTS
-              # ----------------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("NAVIGATION / LOCALIZATION REQUESTS")
-              print("=" * 80)
-
-              # Navigate again while recording requests.
-              requests_seen = []
-
-              def on_request(request):
-
-                  url = request.url.lower()
-
-                  interesting = [
-                      "localization",
-                      "country",
-                      "market",
-                      "geolocation",
-                      "currency",
-                  ]
-
-                  if any(
-                      x in url
-                      for x in interesting
-                  ):
-
-                      requests_seen.append(
-                          (
-                              request.method,
-                              request.url
-                          )
-                      )
-
-              page.on(
-                  "request",
-                  on_request
-              )
-
-              page.reload(
-                  wait_until="domcontentloaded",
-                  timeout=60000,
-              )
-
-              page.wait_for_timeout(5000)
-
-              for method, url in requests_seen:
-
-                  print(
-                      method,
-                      url
-                  )
-
-              # ----------------------------------------------------------
-              # FINAL STATE
-              # ----------------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("FINAL STATE")
+              print("FINAL PRODUCT STATE")
               print("=" * 80)
 
               print(
                   "URL:",
-                  page.url
+                  page.url,
               )
 
               print(
                   "TITLE:",
-                  page.title()
+                  page.title(),
               )
 
               body_text = page.locator(
@@ -450,12 +488,18 @@ jobs:
                           "124.98",
                           "$124.98",
                           "€123,99",
+                          "ships:",
                       ]
                   ):
 
                       print(
                           repr(line)
                       )
+
+
+              # --------------------------------------------------
+              # END
+              # --------------------------------------------------
 
               print()
               print("=" * 80)

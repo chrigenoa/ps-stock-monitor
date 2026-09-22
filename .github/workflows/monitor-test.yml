@@ -1,4 +1,5 @@
-name: Stock Monitor Test
+```yaml
+name: Full Stock Monitor Test
 
 on:
   workflow_dispatch:
@@ -22,8 +23,8 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          playwright install chromium --with-deps
+          pip install requests playwright
+          playwright install --with-deps chromium
 
       - name: Run stock monitor
         env:
@@ -34,10 +35,12 @@ jobs:
 
       - name: Show stock state
         run: |
-          echo "===== stock_state.json ====="
+          echo "========================================"
+          echo "STOCK STATE"
+          echo "========================================"
           cat stock_state.json
 
-      - name: Save stock state
+      - name: Commit updated stock state
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -45,8 +48,9 @@ jobs:
           git add stock_state.json
 
           if git diff --cached --quiet; then
-            echo "No changes to stock state."
+            echo "No stock state changes to commit."
           else
             git commit -m "Update stock state"
             git push
           fi
+```

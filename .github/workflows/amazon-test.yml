@@ -1,4 +1,4 @@
-name: Amazon Postal Code Test 2
+name: Amazon Postal Code Test 3
 
 on:
   workflow_dispatch:
@@ -22,7 +22,7 @@ jobs:
           pip install playwright
           playwright install --with-deps chromium
 
-      - name: Test Amazon Italian postal code
+      - name: Inspect Amazon location state
         run: |
           python - <<'PY'
           from playwright.sync_api import sync_playwright
@@ -52,11 +52,8 @@ jobs:
               page = context.new_page()
 
               print("=" * 80)
-              print("AMAZON POSTAL CODE TEST 2")
+              print("AMAZON POSTAL CODE TEST 3")
               print("=" * 80)
-
-              print()
-              print("OPENING PRODUCT PAGE...")
 
               page.goto(
                   URL,
@@ -66,41 +63,15 @@ jobs:
 
               page.wait_for_timeout(3000)
 
-              print()
-              print("TITLE:")
-              print(page.title())
+              delivery = page.locator(
+                  "#glow-ingress-block"
+              ).first
 
               print()
               print("=" * 80)
               print("INITIAL DELIVERY")
               print("=" * 80)
 
-              delivery = page.locator(
-                  "#glow-ingress-block"
-              ).first
-
-              print(
-                  "COUNT:",
-                  delivery.count()
-              )
-
-              print(
-                  "VISIBLE:",
-                  delivery.is_visible()
-                  if delivery.count() > 0
-                  else False
-              )
-
-              if delivery.count() == 0:
-                  print(
-                      "ERROR: DELIVERY ELEMENT NOT FOUND"
-                  )
-                  browser.close()
-                  raise SystemExit(1)
-
-              print(
-                  "TEXT:"
-              )
               print(
                   delivery.inner_text().strip()
               )
@@ -112,154 +83,156 @@ jobs:
 
               page.wait_for_timeout(1500)
 
-              print()
-              print("=" * 80)
-              print("CAP WINDOW")
-              print("=" * 80)
-
-              cap_input = page.locator(
+              cap = page.locator(
                   "#GLUXZipUpdateInput"
               ).first
 
-              print(
-                  "CAP COUNT:",
-                  cap_input.count()
-              )
-
-              if cap_input.count() == 0:
-                  print(
-                      "ERROR: CAP INPUT NOT FOUND"
-                  )
-                  print()
-                  print("BODY:")
-                  print(
-                      page.locator(
-                          "body"
-                      ).inner_text()[:5000]
-                  )
-                  browser.close()
-                  raise SystemExit(1)
-
-              print(
-                  "CAP VISIBLE:",
-                  cap_input.is_visible()
-              )
-
-              print(
-                  "CAP ARIA:",
-                  cap_input.get_attribute(
-                      "aria-label"
-                  )
-              )
-
-              print()
-              print(
-                  "FILLING CAP:",
-                  CAP
-              )
-
-              cap_input.fill(CAP)
-
-              print(
-                  "CAP VALUE:",
-                  cap_input.input_value()
-              )
-
-              page.wait_for_timeout(500)
-
-              print()
-              print("=" * 80)
-              print("CAP CONFIRM")
-              print("=" * 80)
+              cap.fill(CAP)
 
               confirm = page.locator(
                   "#GLUXZipInputSection input[type='submit']"
               ).first
 
-              print(
-                  "CONFIRM COUNT:",
-                  confirm.count()
-              )
-
-              if confirm.count() == 0:
-
-                  print(
-                      "ERROR: CAP CONFIRM NOT FOUND"
-                  )
-
-                  print()
-                  print(
-                      "ALL SUBMIT INPUTS:"
-                  )
-
-                  submits = page.locator(
-                      "input[type='submit']"
-                  )
-
-                  for i in range(
-                      submits.count()
-                  ):
-
-                      element = submits.nth(i)
-
-                      try:
-                          print(
-                              i,
-                              "visible=",
-                              element.is_visible(),
-                              "id=",
-                              element.get_attribute("id"),
-                              "aria-labelledby=",
-                              element.get_attribute(
-                                  "aria-labelledby"
-                              )
-                          )
-                      except Exception:
-                          pass
-
-                  browser.close()
-                  raise SystemExit(1)
+              print()
+              print("=" * 80)
+              print("BEFORE CAP CONFIRM")
+              print("=" * 80)
 
               print(
-                  "VISIBLE:",
-                  confirm.is_visible()
-              )
-
-              print(
-                  "DISABLED:",
-                  confirm.is_disabled()
-              )
-
-              print(
-                  "TYPE:",
-                  confirm.get_attribute(
-                      "type"
-                  )
-              )
-
-              print(
-                  "ARIA-LABELLED-BY:",
-                  confirm.get_attribute(
-                      "aria-labelledby"
-                  )
+                  "CAP:",
+                  cap.input_value()
               )
 
               print()
-              print(
-                  "CLICKING CAP CONFIRM..."
+              print("RELEVANT INPUTS:")
+
+              inputs = page.locator(
+                  "input"
               )
+
+              for i in range(
+                  inputs.count()
+              ):
+
+                  element = inputs.nth(i)
+
+                  try:
+                      visible = element.is_visible()
+                  except Exception:
+                      visible = False
+
+                  element_id = element.get_attribute("id")
+                  name = element.get_attribute("name")
+                  value = element.get_attribute("value")
+
+                  if (
+                      visible
+                      or (
+                          element_id
+                          and "GLUX" in element_id
+                      )
+                      or (
+                          name
+                          and (
+                              "location" in name.lower()
+                              or "zip" in name.lower()
+                              or "postal" in name.lower()
+                          )
+                      )
+                  ):
+
+                      print(
+                          i,
+                          "id=",
+                          element_id,
+                          "name=",
+                          name,
+                          "value=",
+                          repr(value)
+                      )
+
+              print()
+              print("CLICKING CAP CONFIRM...")
 
               confirm.click()
-
-              print(
-                  "CLICK SENT"
-              )
 
               page.wait_for_timeout(4000)
 
               print()
               print("=" * 80)
-              print("SUCCESS DIALOG")
+              print("AFTER CAP CONFIRM")
+              print("=" * 80)
+
+              print()
+              print("CONFIRMED ZIP:")
+
+              confirmed = page.locator(
+                  "#GLUXZipConfirmationValue"
+              ).first
+
+              print(
+                  repr(
+                      confirmed.inner_text().strip()
+                  )
+              )
+
+              print()
+              print("COOKIES AFTER CAP CONFIRM:")
+
+              for cookie in context.cookies():
+
+                  print(
+                      cookie["name"],
+                      "=",
+                      cookie["value"][:200]
+                  )
+
+              print()
+              print("=" * 80)
+              print("GLUX LOCATION ELEMENTS")
+              print("=" * 80)
+
+              glux = page.locator(
+                  "[id^='GLUX']"
+              )
+
+              print(
+                  "COUNT:",
+                  glux.count()
+              )
+
+              for i in range(
+                  glux.count()
+              ):
+
+                  element = glux.nth(i)
+
+                  element_id = element.get_attribute(
+                      "id"
+                  )
+
+                  tag = element.evaluate(
+                      "(el) => el.tagName"
+                  )
+
+                  try:
+                      text = element.inner_text().strip()
+                  except Exception:
+                      text = ""
+
+                  if text:
+                      text = text[:300]
+
+                  print(
+                      i,
+                      tag,
+                      element_id,
+                      repr(text)
+                  )
+
+              print()
+              print("=" * 80)
+              print("HIDDEN SUCCESS DIALOG")
               print("=" * 80)
 
               success = page.locator(
@@ -267,245 +240,74 @@ jobs:
               ).first
 
               print(
-                  "COUNT:",
-                  success.count()
+                  "VISIBLE:",
+                  success.is_visible()
               )
-
-              if success.count() > 0:
-
-                  print(
-                      "VISIBLE:",
-                      success.is_visible()
-                  )
-
-                  print(
-                      "TEXT:"
-                  )
-
-                  print(
-                      success.inner_text().strip()
-                  )
-
-              print()
-              print("=" * 80)
-              print("CONFIRMED ZIP")
-              print("=" * 80)
-
-              confirmed = page.locator(
-                  "#GLUXZipConfirmationValue"
-              ).first
 
               print(
-                  "COUNT:",
-                  confirmed.count()
+                  success.inner_text().strip()
               )
 
-              if confirmed.count() > 0:
-
-                  print(
-                      "VISIBLE:",
-                      confirmed.is_visible()
-                  )
-
-                  print(
-                      "TEXT:",
-                      repr(
-                          confirmed.inner_text().strip()
-                      )
-                  )
-
               print()
               print("=" * 80)
-              print("ZIP ERROR")
+              print("CLOSING SUCCESS DIALOG")
               print("=" * 80)
 
-              error = page.locator(
-                  "#GLUXZipError"
-              ).first
-
-              if error.count() > 0:
-
-                  print(
-                      "VISIBLE:",
-                      error.is_visible()
-                  )
-
-                  print(
-                      "TEXT:",
-                      repr(
-                          error.inner_text().strip()
-                      )
-                  )
-
-              print()
-              print("=" * 80)
-              print("SERVER ERROR")
-              print("=" * 80)
-
-              server_error = page.locator(
-                  "#GLUXZipServerError"
-              ).first
-
-              if server_error.count() > 0:
-
-                  print(
-                      "VISIBLE:",
-                      server_error.is_visible()
-                  )
-
-                  print(
-                      "TEXT:",
-                      repr(
-                          server_error.inner_text().strip()
-                      )
-                  )
-
-              print()
-              print("=" * 80)
-              print("CONTINUE BUTTON")
-              print("=" * 80)
-
-              continue_button = page.locator(
+              close = page.locator(
                   "#GLUXConfirmClose"
               ).first
 
               print(
                   "COUNT:",
-                  continue_button.count()
+                  close.count()
               )
 
-              if continue_button.count() > 0:
+              print(
+                  "VISIBLE:",
+                  close.is_visible()
+              )
 
-                  print(
-                      "VISIBLE:",
-                      continue_button.is_visible()
-                  )
+              if close.count() > 0 and close.is_visible():
 
-                  print(
-                      "TAG:",
-                      continue_button.evaluate(
-                          "(el) => el.tagName"
-                      )
-                  )
-
-                  print(
-                      "TYPE:",
-                      continue_button.get_attribute(
-                          "type"
-                      )
-                  )
-
-                  print(
-                      "VALUE:",
-                      continue_button.get_attribute(
-                          "value"
-                      )
-                  )
-
-                  print(
-                      "TEXT:",
-                      repr(
-                          continue_button.inner_text().strip()
-                      )
-                  )
-
-              if (
-                  continue_button.count() > 0
-                  and continue_button.is_visible()
-              ):
-
-                  print()
-                  print(
-                      "CLICKING CONTINUE..."
-                  )
-
-                  continue_button.click()
+                  close.click()
 
                   page.wait_for_timeout(5000)
 
               print()
               print("=" * 80)
-              print("FINAL DELIVERY")
+              print("AFTER CLOSING")
               print("=" * 80)
 
-              final_delivery = page.locator(
-                  "#glow-ingress-block"
-              ).first
+              print()
+              print("DELIVERY:")
 
               print(
-                  "COUNT:",
-                  final_delivery.count()
+                  page.locator(
+                      "#glow-ingress-block"
+                  ).first.inner_text().strip()
               )
 
-              if final_delivery.count() > 0:
+              print()
+              print("COOKIES:")
+
+              for cookie in context.cookies():
 
                   print(
-                      "VISIBLE:",
-                      final_delivery.is_visible()
-                  )
-
-                  print(
-                      "TEXT:"
-                  )
-
-                  print(
-                      final_delivery.inner_text().strip()
+                      cookie["name"],
+                      "=",
+                      cookie["value"][:200]
                   )
 
               print()
-              print("=" * 80)
-              print("FINAL PRODUCT STATE")
-              print("=" * 80)
-
-              print(
-                  "PRODUCT TITLE:",
-                  page.locator(
-                      "#productTitle"
-                  ).first.inner_text().strip()
-              )
+              print("FINAL BUYBOX:")
 
               buybox = page.locator(
                   "#buybox"
               ).first
 
-              print()
-              print("BUYBOX COUNT:", buybox.count())
-
-              if buybox.count() > 0:
-
-                  print(
-                      "BUYBOX TEXT:"
-                  )
-
-                  print(
-                      buybox.inner_text().strip()[:3000]
-                  )
-
-              print()
-              print("=" * 80)
-              print("COOKIES")
-              print("=" * 80)
-
-              for cookie in context.cookies():
-
-                  if cookie["name"] in [
-                      "lc-acbit",
-                      "i18n-prefs",
-                      "session-id",
-                  ]:
-
-                      print(
-                          cookie["name"],
-                          "=",
-                          cookie["value"][:100]
-                      )
-
-              print()
-              print("=" * 80)
-              print("FINAL URL")
-              print("=" * 80)
-
-              print(page.url)
+              print(
+                  buybox.inner_text().strip()[:3000]
+              )
 
               print()
               print("=" * 80)
@@ -513,4 +315,5 @@ jobs:
               print("=" * 80)
 
               browser.close()
+
           PY

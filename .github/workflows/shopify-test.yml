@@ -72,65 +72,62 @@ jobs:
               print("2. LOCALIZATION FORM")
               print("=" * 80)
 
-              localization_form = page.locator(
+              form = page.locator(
                   'form[action="/localization"]'
               ).first
 
-              print("Form count:", localization_form.count())
+              print("Form count:", form.count())
 
-              if localization_form.count() == 0:
+              if form.count() == 0:
                   print("STOP: localization form NOT FOUND")
                   browser.close()
                   raise SystemExit(1)
 
-              selector_button = localization_form.locator(
-                  "button.disclosure__button"
+              country_input = form.locator(
+                  'input[name="country_code"]'
               ).first
 
               print(
-                  "Selector button count:",
-                  selector_button.count()
+                  "country_code input count:",
+                  country_input.count()
               )
 
-              if selector_button.count() == 0:
-                  print("STOP: selector button NOT FOUND")
+              if country_input.count() == 0:
+                  print("STOP: country_code input NOT FOUND")
                   browser.close()
                   raise SystemExit(1)
+
+              print(
+                  "country_code BEFORE:",
+                  country_input.input_value()
+              )
 
               print()
               print("=" * 80)
-              print("3. SELECT ITALY")
+              print("3. SET ITALY")
               print("=" * 80)
 
-              selector_button.click(
-                  force=True,
-                  timeout=10000,
-              )
-
-              page.wait_for_timeout(500)
-
-              italy_link = localization_form.locator(
-                  'a.disclosure__link[data-value="IT"]'
-              ).first
+              country_input.fill("IT")
 
               print(
-                  "Italy link count:",
-                  italy_link.count()
+                  "country_code AFTER:",
+                  country_input.input_value()
               )
 
-              if italy_link.count() == 0:
-                  print("STOP: Italy link NOT FOUND")
-                  browser.close()
-                  raise SystemExit(1)
+              print("Submitting localization form...")
 
-              italy_link.click(
-                  force=True,
-                  timeout=10000,
-              )
+              with page.expect_navigation(
+                  wait_until="domcontentloaded",
+                  timeout=15000,
+              ):
+                  form.evaluate(
+                      "(form) => form.submit()"
+                  )
 
-              page.wait_for_timeout(3000)
+              page.wait_for_timeout(2500)
 
-              print("URL after Italy:", page.url)
+              print("URL after localization:")
+              print(page.url)
 
               print()
               print("=" * 80)
@@ -150,7 +147,7 @@ jobs:
 
               print()
               print("=" * 80)
-              print("5. BODY / MARKET CHECK")
+              print("5. MARKET CHECK")
               print("=" * 80)
 
               body_text = page.locator("body").inner_text()
@@ -166,12 +163,11 @@ jobs:
               )
 
               print()
-              print("Relevant body lines:")
+              print("Relevant lines:")
 
               for line in body_text.splitlines():
 
                   line = line.strip()
-
                   lower = line.lower()
 
                   if (
@@ -194,13 +190,13 @@ jobs:
 
               if h1.count() > 0:
                   print(
-                      "H1 text:",
+                      "H1:",
                       repr(h1.inner_text())
                   )
 
               print()
               print("=" * 80)
-              print("7. PRODUCT ANCESTORS")
+              print("7. PRODUCT ANCestors")
               print("=" * 80)
 
               if h1.count() > 0:
@@ -226,21 +222,12 @@ jobs:
                           text = ancestor.inner_text()
 
                           print()
-                          print(
-                              "LEVEL:",
-                              level
-                          )
-                          print(
-                              "TAG:",
-                              tag
-                          )
-                          print(
-                              "CLASS:",
-                              classes
-                          )
+                          print("LEVEL:", level)
+                          print("TAG:", tag)
+                          print("CLASS:", classes)
                           print(
                               "TEXT:",
-                              repr(text[:1200])
+                              repr(text[:1500])
                           )
 
                       except Exception as e:
@@ -248,60 +235,6 @@ jobs:
                               "Ancestor error:",
                               e
                           )
-
-              print()
-              print("=" * 80)
-              print("8. ALL BUTTONS NEAR PRODUCT")
-              print("=" * 80)
-
-              if h1.count() > 0:
-
-                  for level in range(1, 6):
-
-                      ancestor = h1.locator(
-                          "xpath=" + "/.." * level
-                      ).first
-
-                      if ancestor.count() == 0:
-                          continue
-
-                      buttons = ancestor.locator("button")
-
-                      if buttons.count() == 0:
-                          continue
-
-                      print()
-                      print(
-                          "LEVEL",
-                          level,
-                          "BUTTON COUNT:",
-                          buttons.count()
-                      )
-
-                      for i in range(
-                          min(buttons.count(), 20)
-                      ):
-
-                          button = buttons.nth(i)
-
-                          try:
-                              print(
-                                  "BUTTON",
-                                  i,
-                                  "| visible=",
-                                  button.is_visible(),
-                                  "| disabled=",
-                                  button.is_disabled(),
-                                  "| text=",
-                                  repr(
-                                      button.inner_text()
-                                  )
-                              )
-                          except Exception as e:
-                              print(
-                                  "button error:",
-                                  e
-                              )
 
               print()
               print("=" * 80)

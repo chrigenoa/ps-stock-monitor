@@ -1,0 +1,489 @@
+name: Amazon Cart Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  amazon-cart-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright
+          playwright install --with-deps chromium
+
+      - name: Test 55 euro offer
+        run: |
+          cat > amazon_cart_test.py <<'PY'
+          from playwright.sync_api import sync_playwright
+          import re
+
+          PRODUCT_URL = "https://www.amazon.it/dp/B0H9HFPRRD/"
+          ZIP_CODE = "00100"
+          TARGET_PRICE = "55,00"
+
+          def clean(text):
+              return re.sub(r"\s+", " ", text or "").strip()
+
+          with sync_playwright() as p:
+              browser = p.chromium.launch(headless=True)
+
+              context = browser.new_context(
+                  locale="it-IT",
+                  timezone_id="Europe/Rome",
+                  viewport={"width": 1440, "height": 1000},
+              )
+
+              page = context.new_page()
+
+              print("=" * 80)
+              print("1. OPEN AMAZON")
+              print("=" * 80)
+
+              response = page.goto(
+                  "https://www.amazon.it/",
+                  wait_until="domcontentloaded",
+                  timeout=60000,
+              )
+
+              print("HTTP:", response.status if response else "NONE")
+              print("URL:", page.url)
+              print("TITLE:", page.title())
+
+              page.wait_for_timeout(3000)
+
+              continue_buttons = page.get_by_text(
+                  "Continua con gli acquisti",
+                  exact=True
+              )
+
+              if continue_buttons.count() > 0:
+                  for i in range(continue_buttons.count()):
+                      try:
+                          button = continue_buttons.nth(i)
+
+                          if button.is_visible():
+                              print("CLICK: Continua con gli acquisti")
+                              button.click()
+                              page.wait_for_timeout(5000)
+                              break
+
+                      except Exception:
+                          pass
+
+              print()
+              print("=" * 80)
+              print("2. SET DELIVERY ZIP")
+              print("=" * 80)
+
+              ingress = page.locator("#glow-ingress-block")
+
+              if ingress.count() == 0:
+                  print("ERROR: DELIVERY BLOCK NOT FOUND")
+                  browser.close()
+                  raise SystemExit(1)
+
+              print(
+                  "DELIVERY BEFORE:",
+                  repr(clean(ingress.first.inner_text()))
+              )
+
+              ingress.first.click()
+              page.wait_for_timeout(1500)
+
+              zip_input = page.locator("#GLUXZipUpdateInput")
+
+              if zip_input.count() == 0:
+                  print("ERROR: ZIP INPUT NOT FOUND")
+                  browser.close()
+                  raise SystemExit(1)
+
+              zip_input.fill(ZIP_CODE)
+
+              confirm = page.locator(
+                  "#GLUXZipInputSection input[type='submit']"
+              )
+
+              if confirm.count() == 0:
+                  print("ERROR: ZIP CONFIRM NOT FOUND")
+                  browser.close()
+                  raise SystemExit(1)
+
+              confirm.first.click()
+              page.wait_for_timeout(3000)
+
+              confirmation = page.locator(
+                  "#GLUXZipConfirmationValue"
+              )
+
+              if confirmation.count() > 0:
+                  print(
+                      "CONFIRMED ZIP:",
+                      repr(clean(confirmation.first.inner_text()))
+                  )
+
+              print()
+              print("=" * 80)
+              print("3. OPEN PRODUCT")
+              print("=" * 80)
+
+              page.goto(
+                  PRODUCT_URL,
+                  wait_until="domcontentloaded",
+                  timeout=60000,
+              )
+
+              page.wait_for_timeout(5000)
+
+              print("PRODUCT URL:", page.url)
+              print("TITLE:", page.title())
+
+              product_title = page.locator("#productTitle").first
+
+              if product_title.count() > 0:
+                  print(
+                      "PRODUCT:",
+                      clean(product_title.inner_text())
+                  )
+
+              delivery = page.locator(
+                  "#glow-ingress-block"
+              ).first
+
+              if delivery.count() > 0:
+                  print(
+                      "DELIVERY:",
+                      repr(clean(delivery.inner_text()))
+                  )
+
+              print()
+              print("=" * 80)
+              print("4. OPEN PURCHASE OPTIONS")
+              print("=" * 80)
+
+              offer_link = page.locator(
+                  "a[href*='/gp/offer-listing/B0H9HFPRRD/']"
+              ).first
+
+              if offer_link.count() == 0:
+                  print("ERROR: OFFER LINK NOT FOUND")
+                  browser.close()
+                  raise SystemExit(1)
+
+              href = offer_link.get_attribute("href")
+
+              print("OFFER HREF:", href)
+
+              offer_url = page.url.split("/dp/")[0] + href
+
+              print("OFFER URL:", offer_url)
+
+              offer_page = context.new_page()
+
+              response = offer_page.goto(
+                  offer_url,
+                  wait_until="domcontentloaded",
+                  timeout=60000,
+              )
+
+              print(
+                  "HTTP:",
+                  response.status if response else "NONE"
+              )
+              print("FINAL URL:", offer_page.url)
+              print("TITLE:", offer_page.title())
+
+              offer_page.wait_for_timeout(5000)
+
+              print()
+              print("=" * 80)
+              print("5. FIND 55 EURO OFFER")
+              print("=" * 80)
+
+              body = offer_page.locator("body").inner_text()
+
+              lines = [
+                  clean(line)
+                  for line in body.splitlines()
+                  if clean(line)
+              ]
+
+              price_found = False
+
+              for i, line in enumerate(lines):
+
+                  if TARGET_PRICE in line:
+
+                      print()
+                      print("PRICE MATCH:", repr(line))
+
+                      start = max(0, i - 5)
+                      end = min(len(lines), i + 15)
+
+                      print()
+                      print("CONTEXT:")
+
+                      for context_line in lines[start:end]:
+                          print(" ", context_line)
+
+                      price_found = True
+
+              print()
+              print("55 EURO PRICE FOUND:", price_found)
+
+              if not price_found:
+                  print("ERROR: 55 EURO OFFER NOT FOUND")
+                  browser.close()
+                  raise SystemExit(1)
+
+              print()
+              print("=" * 80)
+              print("6. FIND THE CORRECT OFFER CONTAINER")
+              print("=" * 80)
+
+              candidates = offer_page.locator(
+                  "div, article, li"
+              )
+
+              target_container = None
+
+              for i in range(min(candidates.count(), 3000)):
+                  try:
+                      element = candidates.nth(i)
+
+                      if not element.is_visible():
+                          continue
+
+                      text = clean(element.inner_text())
+
+                      if not text:
+                          continue
+
+                      if TARGET_PRICE not in text:
+                          continue
+
+                      if "Aggiungi al carrello" not in text:
+                          continue
+
+                      if "giocagio" not in text.lower():
+                          continue
+
+                      # Avoid selecting an excessively large parent
+                      if len(text) > 5000:
+                          continue
+
+                      target_container = element
+                      print("TARGET CONTAINER FOUND")
+                      print("TEXT:")
+                      print(text[:4000])
+                      break
+
+                  except Exception:
+                      pass
+
+              if target_container is None:
+                  print("ERROR: TARGET 55 EURO OFFER CONTAINER NOT FOUND")
+                  browser.close()
+                  raise SystemExit(1)
+
+              print()
+              print("=" * 80)
+              print("7. FIND ADD TO CART BUTTON")
+              print("=" * 80)
+
+              buttons = target_container.locator(
+                  "button, input[type='submit'], input[type='button'], a"
+              )
+
+              cart_button = None
+
+              for i in range(buttons.count()):
+                  try:
+                      button = buttons.nth(i)
+
+                      if not button.is_visible():
+                          continue
+
+                      text = clean(button.inner_text())
+
+                      value = clean(
+                          button.get_attribute("value")
+                      )
+
+                      aria = clean(
+                          button.get_attribute("aria-label")
+                      )
+
+                      combined = " | ".join(
+                          x for x in [text, value, aria]
+                          if x
+                      )
+
+                      print(
+                          "BUTTON:",
+                          repr(combined)
+                      )
+
+                      if "Aggiungi al carrello" in combined:
+                          cart_button = button
+                          break
+
+                  except Exception:
+                      pass
+
+              if cart_button is None:
+                  print("ERROR: ADD TO CART BUTTON NOT FOUND")
+                  browser.close()
+                  raise SystemExit(1)
+
+              print()
+              print("ADD TO CART BUTTON FOUND")
+              print(
+                  "BUTTON TEXT:",
+                  repr(clean(cart_button.inner_text()))
+              )
+
+              print()
+              print("=" * 80)
+              print("8. CLICK 55 EURO OFFER")
+              print("=" * 80)
+
+              cart_button.click()
+
+              offer_page.wait_for_timeout(5000)
+
+              print("URL AFTER CLICK:", offer_page.url)
+              print("TITLE AFTER CLICK:", offer_page.title())
+
+              print()
+              print("=" * 80)
+              print("9. CHECK CART RESULT")
+              print("=" * 80)
+
+              # Amazon may update the cart asynchronously.
+              # Inspect both the current page and the cart page.
+
+              current_body = clean(
+                  offer_page.locator("body").inner_text()
+              )
+
+              print("CURRENT PAGE CART REFERENCES:")
+
+              for keyword in [
+                  "Aggiunto al carrello",
+                  "Aggiunto al carrello.",
+                  "Nel carrello",
+                  "Carrello",
+                  "55,00",
+                  "giocagio",
+              ]:
+                  if keyword.lower() in current_body.lower():
+                      print(" FOUND:", repr(keyword))
+
+              cart_link = offer_page.locator(
+                  "a[href*='/gp/cart']"
+              ).first
+
+              print()
+              print(
+                  "CART LINK COUNT:",
+                  cart_link.count()
+              )
+
+              if cart_link.count() > 0:
+                  try:
+                      print(
+                          "CART LINK HREF:",
+                          cart_link.get_attribute("href")
+                      )
+                  except Exception:
+                      pass
+
+              print()
+              print("=" * 80)
+              print("10. OPEN CART")
+              print("=" * 80)
+
+              cart_page = context.new_page()
+
+              cart_response = cart_page.goto(
+                  "https://www.amazon.it/gp/cart/view.html",
+                  wait_until="domcontentloaded",
+                  timeout=60000,
+              )
+
+              print(
+                  "CART HTTP:",
+                  cart_response.status
+                  if cart_response else "NONE"
+              )
+
+              print("CART URL:", cart_page.url)
+              print("CART TITLE:", cart_page.title())
+
+              cart_page.wait_for_timeout(5000)
+
+              cart_body = clean(
+                  cart_page.locator("body").inner_text()
+              )
+
+              print()
+              print("CART CONTENT:")
+
+              print(cart_body[:10000])
+
+              print()
+              print("=" * 80)
+              print("11. FINAL RESULT")
+              print("=" * 80)
+
+              product_present = (
+                  "B0H9HFPRRD" in cart_body
+                  or "set Allenatore Fuoriclasse 30° Anniversario"
+                  in cart_body
+              )
+
+              price_present = (
+                  "55,00" in cart_body
+              )
+
+              seller_present = (
+                  "giocagio" in cart_body.lower()
+              )
+
+              print(
+                  "PRODUCT IN CART:",
+                  product_present
+              )
+
+              print(
+                  "55 EURO IN CART:",
+                  price_present
+              )
+
+              print(
+                  "GIOCAGIO IN CART:",
+                  seller_present
+              )
+
+              if product_present:
+                  print()
+                  print("RESULT: OFFER WAS ACTUALLY ADDED TO CART")
+              else:
+                  print()
+                  print("RESULT: OFFER WAS NOT CONFIRMED IN CART")
+
+              browser.close()
+          PY
+
+          python amazon_cart_test.py

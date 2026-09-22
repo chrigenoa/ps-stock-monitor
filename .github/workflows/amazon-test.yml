@@ -22,13 +22,12 @@ jobs:
           pip install playwright
           playwright install --with-deps chromium
 
-      - name: Diagnose Amazon Italian delivery
+      - name: Inspect Amazon delivery popup
         run: |
           python - <<'PY'
           from playwright.sync_api import sync_playwright
 
           URL = "https://www.amazon.it/dp/B0H9HFPRRD/"
-          POSTAL_CODE = "00100"
 
           with sync_playwright() as p:
 
@@ -58,560 +57,243 @@ jobs:
               page = context.new_page()
 
               print("=" * 80)
-              print("AMAZON ITALIAN DELIVERY DIAGNOSTIC")
+              print("AMAZON DELIVERY POPUP INSPECTION")
               print("=" * 80)
               print()
 
-              print("URL:")
-              print(URL)
-              print()
-
-              print("TARGET POSTAL CODE:")
-              print(POSTAL_CODE)
-              print()
-
-              # --------------------------------------------------
-              # 1. Apertura pagina
-              # --------------------------------------------------
-
-              response = page.goto(
+              page.goto(
                   URL,
                   wait_until="domcontentloaded",
                   timeout=30000,
               )
 
-              print("INITIAL HTTP STATUS:")
-              print(
-                  response.status
-                  if response
-                  else "NO RESPONSE"
-              )
-              print()
-
               page.wait_for_timeout(4000)
 
-              print("INITIAL DELIVERY TEXT:")
-              body_text = (
-                  page.locator("body")
-                  .inner_text()
-                  .strip()
-              )
+              delivery = page.locator(
+                  "#glow-ingress-block"
+              ).first
 
-              for line in body_text.splitlines():
-                  line = line.strip()
+              if delivery.count() == 0:
+                  print("ERROR: delivery element not found")
+                  browser.close()
+                  raise SystemExit(1)
 
-                  if (
-                      "indirizzo di consegna" in line.lower()
-                      or line.lower() in (
-                          "stati uniti",
-                          "italia",
-                          "usa",
-                          "united states",
-                      )
-                  ):
-                      print(line)
+              print("Clicking delivery location...")
+
+              delivery.click()
+
+              page.wait_for_timeout(1500)
 
               print()
-
-              # --------------------------------------------------
-              # 2. Ricerca del pulsante/elemento destinazione
-              # --------------------------------------------------
-
               print("=" * 80)
-              print("DELIVERY ELEMENTS")
+              print("ALL VISIBLE INPUTS")
               print("=" * 80)
 
-              selectors = [
-                  "#glow-ingress-block",
-                  "#glow-ingress-line1",
-                  "#glow-ingress-line2",
-                  "#nav-global-location-popover-link",
-                  "#contextualIngressPt",
-                  "#contextualIngressPtLabel",
-              ]
+              inputs = page.locator("input")
 
-              found_elements = []
+              visible_count = 0
 
-              for selector in selectors:
+              for i in range(inputs.count()):
 
-                  locator = page.locator(selector)
+                  element = inputs.nth(i)
 
-                  count = locator.count()
-
-                  print()
-                  print(
-                      f"SELECTOR {selector}: "
-                      f"{count}"
-                  )
-
-                  for i in range(count):
-
-                      element = locator.nth(i)
-
-                      try:
-                          visible = element.is_visible()
-                      except Exception:
-                          visible = False
-
-                      if not visible:
+                  try:
+                      if not element.is_visible():
                           continue
+                  except Exception:
+                      continue
 
-                      try:
-                          text = (
-                              element.inner_text()
-                              .strip()
-                          )
-                      except Exception:
-                          text = ""
+                  visible_count += 1
 
-                      try:
-                          aria = (
-                              element.get_attribute(
-                                  "aria-label"
-                              )
-                              or ""
-                          )
-                      except Exception:
-                          aria = ""
-
-                      print(
-                          f"  visible=True "
-                          f"text={text!r} "
-                          f"aria={aria!r}"
+                  try:
+                      input_type = (
+                          element.get_attribute("type")
+                          or ""
                       )
+                  except Exception:
+                      input_type = ""
 
-                      found_elements.append(
-                          element
+                  try:
+                      name = (
+                          element.get_attribute("name")
+                          or ""
                       )
+                  except Exception:
+                      name = ""
+
+                  try:
+                      input_id = (
+                          element.get_attribute("id")
+                          or ""
+                      )
+                  except Exception:
+                      input_id = ""
+
+                  try:
+                      placeholder = (
+                          element.get_attribute(
+                              "placeholder"
+                          )
+                          or ""
+                      )
+                  except Exception:
+                      placeholder = ""
+
+                  try:
+                      aria = (
+                          element.get_attribute(
+                              "aria-label"
+                          )
+                          or ""
+                      )
+                  except Exception:
+                      aria = ""
+
+                  try:
+                      value = (
+                          element.input_value()
+                          or ""
+                      )
+                  except Exception:
+                      value = ""
+
+                  print()
+                  print(f"INPUT #{visible_count}")
+                  print(f"  type={input_type!r}")
+                  print(f"  name={name!r}")
+                  print(f"  id={input_id!r}")
+                  print(f"  placeholder={placeholder!r}")
+                  print(f"  aria-label={aria!r}")
+                  print(f"  value={value!r}")
 
               print()
+              print(
+                  f"VISIBLE INPUT COUNT: {visible_count}"
+              )
 
-              # --------------------------------------------------
-              # 3. Click sulla destinazione
-              # --------------------------------------------------
+              print()
+              print("=" * 80)
+              print("ALL VISIBLE BUTTONS")
+              print("=" * 80)
 
-              clicked = False
+              buttons = page.locator(
+                  "button"
+              )
 
-              for selector in selectors:
+              visible_buttons = 0
 
-                  locator = page.locator(selector)
+              for i in range(buttons.count()):
 
-                  for i in range(locator.count()):
+                  button = buttons.nth(i)
 
-                      element = locator.nth(i)
-
-                      try:
-                          if not element.is_visible():
-                              continue
-                      except Exception:
+                  try:
+                      if not button.is_visible():
                           continue
+                  except Exception:
+                      continue
 
-                      try:
-                          element.click(
-                              timeout=5000
-                          )
-                          clicked = True
-                          print(
-                              "CLICKED DELIVERY "
-                              f"ELEMENT: {selector}"
-                          )
-                          break
-                      except Exception as e:
-                          print(
-                              "CLICK FAILED:"
-                          )
-                          print(
-                              selector,
-                              repr(e)
-                          )
+                  visible_buttons += 1
 
-                  if clicked:
-                      break
-
-              if not clicked:
-                  print()
-                  print(
-                      "COULD NOT CLICK DELIVERY "
-                      "LOCATION."
-                  )
-
-                  print()
-                  print("=" * 80)
-                  print("VISIBLE BUTTONS / LINKS")
-                  print("=" * 80)
-
-                  elements = page.locator(
-                      "button, a"
-                  )
-
-                  for i in range(
-                      min(elements.count(), 300)
-                  ):
-
-                      element = elements.nth(i)
-
-                      try:
-                          if not element.is_visible():
-                              continue
-                      except Exception:
-                          continue
-
-                      try:
-                          text = (
-                              element.inner_text()
-                              .strip()
-                          )
-                      except Exception:
-                          text = ""
-
-                      try:
-                          aria = (
-                              element.get_attribute(
-                                  "aria-label"
-                              )
-                              or ""
-                          )
-                      except Exception:
-                          aria = ""
-
-                      if (
-                          "consegna" in text.lower()
-                          or "indirizzo" in text.lower()
-                          or "delivery" in text.lower()
-                          or "location" in text.lower()
-                          or "address" in text.lower()
-                      ):
-                          print(
-                              f"text={text!r} "
-                              f"aria={aria!r}"
-                          )
-
-              else:
-
-                  page.wait_for_timeout(1500)
-
-                  print()
-                  print("=" * 80)
-                  print("DELIVERY POPUP")
-                  print("=" * 80)
-
-                  popup_text = (
-                      page.locator("body")
-                      .inner_text()
-                      .strip()
-                  )
-
-                  popup_lines = [
-                      line.strip()
-                      for line in popup_text.splitlines()
-                      if line.strip()
-                  ]
-
-                  interesting = [
-                      "cap",
-                      "codice postale",
-                      "postal",
-                      "address",
-                      "indirizzo",
-                      "stati uniti",
-                      "italia",
-                      "cambia",
-                      "change",
-                      "consegna",
-                      "delivery",
-                  ]
-
-                  for line in popup_lines:
-
-                      lower = line.lower()
-
-                      if any(
-                          marker in lower
-                          for marker in interesting
-                      ):
-                          print(line)
-
-                  # --------------------------------------------------
-                  # 4. Trova il campo CAP
-                  # --------------------------------------------------
-
-                  print()
-                  print("=" * 80)
-                  print("POSTAL CODE INPUTS")
-                  print("=" * 80)
-
-                  input_selectors = [
-                      "input[name='zipCode']",
-                      "input[name='zipcode']",
-                      "input[name='postalCode']",
-                      "input[name='postal-code']",
-                      "input[id*='zip']",
-                      "input[id*='postal']",
-                      "input[placeholder*='CAP']",
-                      "input[placeholder*='cap']",
-                      "input[placeholder*='Codice']",
-                      "input[placeholder*='Postal']",
-                  ]
-
-                  postal_input = None
-
-                  for selector in input_selectors:
-
-                      locator = page.locator(
-                          selector
+                  try:
+                      text = (
+                          button.inner_text()
+                          .strip()
                       )
+                  except Exception:
+                      text = ""
 
-                      count = locator.count()
+                  try:
+                      button_id = (
+                          button.get_attribute("id")
+                          or ""
+                      )
+                  except Exception:
+                      button_id = ""
+
+                  try:
+                      name = (
+                          button.get_attribute("name")
+                          or ""
+                      )
+                  except Exception:
+                      name = ""
+
+                  try:
+                      button_type = (
+                          button.get_attribute("type")
+                          or ""
+                      )
+                  except Exception:
+                      button_type = ""
+
+                  try:
+                      aria = (
+                          button.get_attribute(
+                              "aria-label"
+                          )
+                          or ""
+                      )
+                  except Exception:
+                      aria = ""
+
+                  print()
+                  print(f"BUTTON #{visible_buttons}")
+                  print(f"  text={text!r}")
+                  print(f"  id={button_id!r}")
+                  print(f"  name={name!r}")
+                  print(f"  type={button_type!r}")
+                  print(f"  aria-label={aria!r}")
+
+              print()
+              print(
+                  f"VISIBLE BUTTON COUNT: "
+                  f"{visible_buttons}"
+              )
+
+              print()
+              print("=" * 80)
+              print("DELIVERY POPUP HTML SNIPPET")
+              print("=" * 80)
+
+              # Cerchiamo elementi che contengono
+              # il testo "CAP italiano".
+              cap_text = page.get_by_text(
+                  "oppure inserisci un CAP italiano",
+                  exact=False,
+              )
+
+              print(
+                  "CAP TEXT COUNT:",
+                  cap_text.count(),
+              )
+
+              if cap_text.count() > 0:
+
+                  try:
+                      parent_html = (
+                          cap_text
+                          .first
+                          .locator("xpath=..")
+                          .evaluate(
+                              "(el) => el.outerHTML"
+                          )
+                      )
 
                       print(
-                          f"{selector}: {count}"
+                          parent_html[:15000]
                       )
 
-                      for i in range(count):
+                  except Exception as e:
 
-                          element = locator.nth(i)
-
-                          try:
-                              visible = (
-                                  element.is_visible()
-                              )
-                          except Exception:
-                              visible = False
-
-                          if not visible:
-                              continue
-
-                          print(
-                              "  VISIBLE POSTAL "
-                              "INPUT FOUND"
-                          )
-
-                          postal_input = element
-                          break
-
-                      if postal_input:
-                          break
-
-                  if postal_input:
-
-                      print()
                       print(
-                          "FILLING POSTAL CODE:"
+                          "Could not extract "
+                          "parent HTML:"
                       )
-                      print(POSTAL_CODE)
-
-                      postal_input.fill(
-                          POSTAL_CODE
-                      )
-
-                      # Cerca pulsante di conferma
-                      confirm_selectors = [
-                          "button",
-                          "input[type='submit']",
-                      ]
-
-                      confirmed = False
-
-                      for selector in confirm_selectors:
-
-                          buttons = page.locator(
-                              selector
-                          )
-
-                          for i in range(
-                              buttons.count()
-                          ):
-
-                              button = buttons.nth(i)
-
-                              try:
-                                  if not button.is_visible():
-                                      continue
-                              except Exception:
-                                  continue
-
-                              try:
-                                  text = (
-                                      button.inner_text()
-                                      .strip()
-                                      .lower()
-                                  )
-                              except Exception:
-                                  text = ""
-
-                              try:
-                                  value = (
-                                      button.get_attribute(
-                                          "value"
-                                      )
-                                      or ""
-                                  ).strip().lower()
-                              except Exception:
-                                  value = ""
-
-                              combined = (
-                                  f"{text} {value}"
-                              )
-
-                              if any(
-                                  marker in combined
-                                  for marker in [
-                                      "applica",
-                                      "conferma",
-                                      "salva",
-                                      "continua",
-                                      "apply",
-                                      "submit",
-                                      "save",
-                                      "continue",
-                                  ]
-                              ):
-
-                                  print(
-                                      "CONFIRM BUTTON:"
-                                  )
-                                  print(
-                                      combined
-                                  )
-
-                                  try:
-                                      button.click(
-                                          timeout=5000
-                                      )
-                                      confirmed = True
-                                      break
-                                  except Exception as e:
-                                      print(
-                                          "CONFIRM CLICK "
-                                          "FAILED:"
-                                      )
-                                      print(
-                                          repr(e)
-                                      )
-
-                          if confirmed:
-                              break
-
-                      if not confirmed:
-
-                          print(
-                              "NO CONFIRM BUTTON "
-                              "FOUND."
-                          )
-
-                  else:
-
-                      print()
-                      print(
-                          "NO VISIBLE POSTAL "
-                          "INPUT FOUND."
-                      )
-
-              # --------------------------------------------------
-              # 5. Attendi aggiornamento
-              # --------------------------------------------------
-
-              page.wait_for_timeout(5000)
+                      print(repr(e))
 
               print()
               print("=" * 80)
-              print("FINAL DELIVERY STATE")
-              print("=" * 80)
-
-              final_text = (
-                  page.locator("body")
-                  .inner_text()
-                  .strip()
-              )
-
-              final_lines = [
-                  line.strip()
-                  for line in final_text.splitlines()
-                  if line.strip()
-              ]
-
-              delivery_markers = [
-                  "stati uniti",
-                  "italia",
-                  "usa",
-                  "consegna",
-                  "delivery",
-                  "indirizzo",
-                  "address",
-                  "cap",
-                  "postal",
-                  "disponibile",
-                  "non disponibile",
-                  "aggiungi al carrello",
-                  "acquista ora",
-                  "tutte le opzioni",
-              ]
-
-              for line in final_lines:
-
-                  lower = line.lower()
-
-                  if any(
-                      marker in lower
-                      for marker in delivery_markers
-                  ):
-                      print(line)
-
-              print()
-              print("=" * 80)
-              print("PRODUCT INFORMATION")
-              print("=" * 80)
-
-              print()
-              print("FINAL URL:")
-              print(page.url)
-
-              print()
-              print("PAGE TITLE:")
-              print(page.title())
-
-              print()
-              print("PRODUCT TITLE:")
-
-              title_locator = page.locator(
-                  "#productTitle"
-              )
-
-              if title_locator.count() > 0:
-                  print(
-                      title_locator
-                      .first
-                      .inner_text()
-                      .strip()
-                  )
-              else:
-                  print("NOT FOUND")
-
-              print()
-              print("ADD TO CART:")
-              print(
-                  page.locator(
-                      "#add-to-cart-button"
-                  ).count()
-              )
-
-              print()
-              print("BUY NOW:")
-              print(
-                  page.locator(
-                      "#buy-now-button"
-                  ).count()
-              )
-
-              print()
-              print("BUYBOX:")
-              print(
-                  page.locator("#buybox").count()
-              )
-
-              print()
-              print("=" * 80)
-              print("END DIAGNOSTIC")
+              print("END INSPECTION")
               print("=" * 80)
 
               browser.close()

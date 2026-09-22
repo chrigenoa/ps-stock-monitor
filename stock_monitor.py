@@ -15,7 +15,6 @@ PRODUCTS = {
 "url": "https://direct.playstation.com/it-it/buy-accessories/playstation5-pro-console-covers-marvels-wolverine-battle-yellow-limited-edition",
 },
 
-```
 "ps5_pro": {
     "name": "PlayStation 5 Pro",
     "site": "playstation_direct",
@@ -51,7 +50,7 @@ PRODUCTS = {
     "site": "shopify",
     "url": "https://www.gtavi-thealbum.com/en-eu/products/grand-theft-auto-vi-the-album-limited-edition-vinyl",
 },
-```
+
 
 }
 
@@ -61,13 +60,12 @@ def load_state():
 if not os.path.exists(STATE_FILE):
 return {}
 
-```
 try:
     with open(STATE_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 except Exception:
     return {}
-```
+
 
 def save_state(state):
 with open(STATE_FILE, "w", encoding="utf-8") as f:
@@ -82,7 +80,6 @@ def send_telegram(notifications):
 token = os.environ.get("TELEGRAM_BOT_TOKEN")
 chat_id = os.environ.get("TELEGRAM_CHAT_ID")
 
-```
 if not token or not chat_id:
     print("Telegram credentials not configured.")
     return False
@@ -119,13 +116,12 @@ for item in notifications:
         success = False
 
 return success
-```
+
 
 def check_product(product):
 site = product.get("site")
 url = product["url"]
 
-```
 if site == "playstation_direct":
     return check_playstation_direct(url)
 
@@ -134,13 +130,13 @@ if site == "shopify":
 
 print(f"Unknown site adapter: {site}")
 return "UNKNOWN"
-```
+
 
 def main():
 state = load_state()
 now = datetime.now(timezone.utc).isoformat()
 
-```
+
 print("=" * 80)
 print("PLAYSTATION / SHOPIFY STOCK MONITOR")
 print("=" * 80)
@@ -216,7 +212,7 @@ print()
 print("=" * 80)
 
 return 0
-```
+
 
 if **name** == "**main**":
 sys.exit(main)

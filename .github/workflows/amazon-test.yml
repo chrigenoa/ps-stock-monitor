@@ -1,4 +1,4 @@
-name: Amazon Stock Test
+name: Amazon Delivery Test
 
 on:
   workflow_dispatch:
@@ -16,18 +16,19 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install dependencies
+      - name: Install Playwright
         run: |
           python -m pip install --upgrade pip
           pip install playwright
           playwright install --with-deps chromium
 
-      - name: Inspect Amazon delivery popup
+      - name: Test Italian delivery location
         run: |
           python - <<'PY'
           from playwright.sync_api import sync_playwright
 
           URL = "https://www.amazon.it/dp/B0H9HFPRRD/"
+          CAP = "00100"
 
           with sync_playwright() as p:
 
@@ -46,20 +47,16 @@ jobs:
                       "width": 1440,
                       "height": 1000,
                   },
-                  user_agent=(
-                      "Mozilla/5.0 (X11; Linux x86_64) "
-                      "AppleWebKit/537.36 "
-                      "(KHTML, like Gecko) "
-                      "Chrome/131.0.0.0 Safari/537.36"
-                  ),
               )
 
               page = context.new_page()
 
               print("=" * 80)
-              print("AMAZON DELIVERY POPUP INSPECTION")
+              print("AMAZON ITALIAN DELIVERY TEST")
               print("=" * 80)
+
               print()
+              print("OPENING PRODUCT PAGE...")
 
               page.goto(
                   URL,
@@ -69,231 +66,188 @@ jobs:
 
               page.wait_for_timeout(4000)
 
+              print()
+              print("INITIAL DELIVERY:")
+
               delivery = page.locator(
                   "#glow-ingress-block"
               ).first
 
-              if delivery.count() == 0:
-                  print("ERROR: delivery element not found")
-                  browser.close()
-                  raise SystemExit(1)
+              if delivery.count() > 0:
+                  print(
+                      delivery.inner_text().strip()
+                  )
+              else:
+                  print(
+                      "Delivery element not found"
+                  )
 
-              print("Clicking delivery location...")
+              print()
+              print("OPENING DELIVERY POPUP...")
+
+              if delivery.count() == 0:
+                  browser.close()
+                  raise SystemExit(
+                      "ERROR: delivery element not found"
+                  )
 
               delivery.click()
 
               page.wait_for_timeout(1500)
 
               print()
+              print("CAP FIELD:")
+
+              cap_input = page.locator(
+                  "#GLUXZipUpdateInput"
+              ).first
+
+              print(
+                  "COUNT:",
+                  cap_input.count()
+              )
+
+              if cap_input.count() == 0:
+                  browser.close()
+                  raise SystemExit(
+                      "ERROR: CAP field not found"
+                  )
+
+              print(
+                  "VISIBLE:",
+                  cap_input.is_visible()
+              )
+
+              print(
+                  "ARIA:",
+                  cap_input.get_attribute(
+                      "aria-label"
+                  )
+              )
+
+              print()
+              print(
+                  f"ENTERING CAP: {CAP}"
+              )
+
+              cap_input.fill(CAP)
+
+              print(
+                  "CAP VALUE:",
+                  cap_input.input_value()
+              )
+
+              page.wait_for_timeout(500)
+
+              print()
+              print("CLICKING FATTO...")
+
+              done_button = page.locator(
+                  "button[name='glowDoneButton']"
+              ).first
+
+              print(
+                  "FATTO COUNT:",
+                  done_button.count()
+              )
+
+              if done_button.count() == 0:
+                  browser.close()
+                  raise SystemExit(
+                      "ERROR: Fatto button not found"
+                  )
+
+              print(
+                  "FATTO VISIBLE:",
+                  done_button.is_visible()
+              )
+
+              done_button.click()
+
+              page.wait_for_timeout(4000)
+
+              print()
               print("=" * 80)
-              print("ALL VISIBLE INPUTS")
+              print("FINAL DELIVERY STATE")
               print("=" * 80)
 
-              inputs = page.locator("input")
+              final_delivery = page.locator(
+                  "#glow-ingress-block"
+              ).first
 
-              visible_count = 0
+              if final_delivery.count() > 0:
 
-              for i in range(inputs.count()):
+                  final_text = (
+                      final_delivery
+                      .inner_text()
+                      .strip()
+                  )
 
-                  element = inputs.nth(i)
+                  print(final_text)
 
-                  try:
-                      if not element.is_visible():
-                          continue
-                  except Exception:
-                      continue
+              else:
 
-                  visible_count += 1
+                  print(
+                      "Final delivery element "
+                      "not found"
+                  )
 
-                  try:
-                      input_type = (
-                          element.get_attribute("type")
-                          or ""
-                      )
-                  except Exception:
-                      input_type = ""
+              print()
+              print("FINAL URL:")
+              print(page.url)
 
-                  try:
-                      name = (
-                          element.get_attribute("name")
-                          or ""
-                      )
-                  except Exception:
-                      name = ""
+              print()
+              print("=" * 80)
+              print("PRODUCT INFORMATION")
+              print("=" * 80)
 
-                  try:
-                      input_id = (
-                          element.get_attribute("id")
-                          or ""
-                      )
-                  except Exception:
-                      input_id = ""
+              title = page.locator(
+                  "#productTitle"
+              ).first
 
-                  try:
-                      placeholder = (
-                          element.get_attribute(
-                              "placeholder"
-                          )
-                          or ""
-                      )
-                  except Exception:
-                      placeholder = ""
-
-                  try:
-                      aria = (
-                          element.get_attribute(
-                              "aria-label"
-                          )
-                          or ""
-                      )
-                  except Exception:
-                      aria = ""
-
-                  try:
-                      value = (
-                          element.input_value()
-                          or ""
-                      )
-                  except Exception:
-                      value = ""
-
+              if title.count() > 0:
                   print()
-                  print(f"INPUT #{visible_count}")
-                  print(f"  type={input_type!r}")
-                  print(f"  name={name!r}")
-                  print(f"  id={input_id!r}")
-                  print(f"  placeholder={placeholder!r}")
-                  print(f"  aria-label={aria!r}")
-                  print(f"  value={value!r}")
+                  print("PRODUCT:")
+                  print(
+                      title.inner_text().strip()
+                  )
 
               print()
-              print(
-                  f"VISIBLE INPUT COUNT: {visible_count}"
-              )
+              print("BUYBOX COUNT:")
 
-              print()
-              print("=" * 80)
-              print("ALL VISIBLE BUTTONS")
-              print("=" * 80)
-
-              buttons = page.locator(
-                  "button"
-              )
-
-              visible_buttons = 0
-
-              for i in range(buttons.count()):
-
-                  button = buttons.nth(i)
-
-                  try:
-                      if not button.is_visible():
-                          continue
-                  except Exception:
-                      continue
-
-                  visible_buttons += 1
-
-                  try:
-                      text = (
-                          button.inner_text()
-                          .strip()
-                      )
-                  except Exception:
-                      text = ""
-
-                  try:
-                      button_id = (
-                          button.get_attribute("id")
-                          or ""
-                      )
-                  except Exception:
-                      button_id = ""
-
-                  try:
-                      name = (
-                          button.get_attribute("name")
-                          or ""
-                      )
-                  except Exception:
-                      name = ""
-
-                  try:
-                      button_type = (
-                          button.get_attribute("type")
-                          or ""
-                      )
-                  except Exception:
-                      button_type = ""
-
-                  try:
-                      aria = (
-                          button.get_attribute(
-                              "aria-label"
-                          )
-                          or ""
-                      )
-                  except Exception:
-                      aria = ""
-
-                  print()
-                  print(f"BUTTON #{visible_buttons}")
-                  print(f"  text={text!r}")
-                  print(f"  id={button_id!r}")
-                  print(f"  name={name!r}")
-                  print(f"  type={button_type!r}")
-                  print(f"  aria-label={aria!r}")
-
-              print()
-              print(
-                  f"VISIBLE BUTTON COUNT: "
-                  f"{visible_buttons}"
-              )
-
-              print()
-              print("=" * 80)
-              print("DELIVERY POPUP HTML SNIPPET")
-              print("=" * 80)
-
-              # Cerchiamo elementi che contengono
-              # il testo "CAP italiano".
-              cap_text = page.get_by_text(
-                  "oppure inserisci un CAP italiano",
-                  exact=False,
+              buybox = page.locator(
+                  "#buybox"
               )
 
               print(
-                  "CAP TEXT COUNT:",
-                  cap_text.count(),
+                  buybox.count()
               )
 
-              if cap_text.count() > 0:
+              print()
+              print("ADD TO CART COUNT:")
 
-                  try:
-                      parent_html = (
-                          cap_text
-                          .first
-                          .locator("xpath=..")
-                          .evaluate(
-                              "(el) => el.outerHTML"
-                          )
-                      )
+              add_to_cart = page.locator(
+                  "#add-to-cart-button"
+              )
 
-                      print(
-                          parent_html[:15000]
-                      )
+              print(
+                  add_to_cart.count()
+              )
 
-                  except Exception as e:
+              print()
+              print("BUY NOW COUNT:")
 
-                      print(
-                          "Could not extract "
-                          "parent HTML:"
-                      )
-                      print(repr(e))
+              buy_now = page.locator(
+                  "#buy-now-button"
+              )
+
+              print(
+                  buy_now.count()
+              )
 
               print()
               print("=" * 80)
-              print("END INSPECTION")
+              print("END TEST")
               print("=" * 80)
 
               browser.close()

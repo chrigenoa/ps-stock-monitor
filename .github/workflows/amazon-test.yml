@@ -1,4 +1,4 @@
-name: Amazon Continue Shopping Test
+name: Amazon Location From Home Test
 
 on:
   workflow_dispatch:
@@ -22,12 +22,14 @@ jobs:
           pip install playwright
           playwright install --with-deps chromium
 
-      - name: Test Amazon intermediate page
+      - name: Test Amazon location from home
         run: |
           python - <<'PY'
           from playwright.sync_api import sync_playwright
 
-          URL = "https://www.amazon.it/dp/B0H9HFPRRD/"
+          AMAZON_HOME = "https://www.amazon.it/"
+          PRODUCT_URL = "https://www.amazon.it/dp/B0H9HFPRRD/"
+          CAP = "00100"
 
           with sync_playwright() as p:
 
@@ -51,14 +53,14 @@ jobs:
               page = context.new_page()
 
               print("=" * 80)
-              print("AMAZON CONTINUE SHOPPING TEST")
+              print("AMAZON LOCATION FROM HOME TEST")
               print("=" * 80)
 
               print()
-              print("LOADING...")
+              print("LOADING AMAZON HOME...")
 
               response = page.goto(
-                  URL,
+                  AMAZON_HOME,
                   wait_until="domcontentloaded",
                   timeout=45000,
               )
@@ -69,15 +71,80 @@ jobs:
               )
 
               print(
-                  "INITIAL URL:",
+                  "URL:",
                   page.url
               )
 
-              page.wait_for_timeout(3000)
+              page.wait_for_timeout(4000)
 
               print()
               print("=" * 80)
               print("INITIAL PAGE")
+              print("=" * 80)
+
+              print(
+                  "TITLE:",
+                  repr(page.title())
+              )
+
+              body = page.locator("body").inner_text(
+                  timeout=10000
+              )
+
+              print(
+                  "BODY LENGTH:",
+                  len(body)
+              )
+
+              print(
+                  "BODY FIRST 1500:"
+              )
+
+              print(body[:1500])
+
+              print()
+              print("=" * 80)
+              print("CONTINUE SHOPPING")
+              print("=" * 80)
+
+              continue_buttons = page.get_by_text(
+                  "Continua con gli acquisti",
+                  exact=True
+              )
+
+              print(
+                  "COUNT:",
+                  continue_buttons.count()
+              )
+
+              target = None
+
+              for i in range(
+                  continue_buttons.count()
+              ):
+
+                  element = continue_buttons.nth(i)
+
+                  try:
+                      if element.is_visible():
+                          target = element
+                          break
+                  except Exception:
+                      pass
+
+              if target:
+
+                  print(
+                      "CLICKING CONTINUE..."
+                  )
+
+                  target.click()
+
+                  page.wait_for_timeout(5000)
+
+              print()
+              print("=" * 80)
+              print("AMAZON HOME AFTER CONTINUE")
               print("=" * 80)
 
               print(
@@ -90,196 +157,332 @@ jobs:
                   page.url
               )
 
-              print()
-              print("BODY:")
+              delivery = page.locator(
+                  "#glow-ingress-block"
+              ).first
 
-              body = page.locator("body").inner_text(
-                  timeout=10000
+              print()
+              print(
+                  "DELIVERY COUNT:",
+                  delivery.count()
               )
 
-              print(body[:3000])
+              if delivery.count() > 0:
+
+                  print(
+                      "DELIVERY VISIBLE:",
+                      delivery.is_visible()
+                  )
+
+                  if delivery.is_visible():
+
+                      print(
+                          "DELIVERY:",
+                          delivery.inner_text().strip()
+                      )
+
+              if delivery.count() == 0:
+
+                  print(
+                      "DELIVERY ELEMENT NOT FOUND."
+                  )
+
+                  browser.close()
+                  raise SystemExit(1)
 
               print()
               print("=" * 80)
-              print("CONTINUE BUTTONS")
+              print("OPENING DELIVERY")
               print("=" * 80)
 
-              buttons = page.get_by_text(
-                  "Continua con gli acquisti",
-                  exact=True
+              delivery.click()
+
+              page.wait_for_timeout(2000)
+
+              cap = page.locator(
+                  "#GLUXZipUpdateInput"
+              ).first
+
+              print(
+                  "CAP COUNT:",
+                  cap.count()
+              )
+
+              if cap.count() == 0:
+
+                  print(
+                      "CAP INPUT NOT FOUND."
+                  )
+
+                  print(
+                      "BODY:",
+                      page.locator("body").inner_text()[:5000]
+                  )
+
+                  browser.close()
+                  raise SystemExit(1)
+
+              print(
+                  "CAP VISIBLE:",
+                  cap.is_visible()
+              )
+
+              cap.fill(CAP)
+
+              confirm = page.locator(
+                  "#GLUXZipInputSection input[type='submit']"
+              ).first
+
+              print(
+                  "CONFIRM COUNT:",
+                  confirm.count()
               )
 
               print(
-                  "COUNT:",
-                  buttons.count()
+                  "CONFIRM VISIBLE:",
+                  confirm.is_visible()
               )
 
-              for i in range(buttons.count()):
+              print(
+                  "CONFIRM DISABLED:",
+                  confirm.is_disabled()
+              )
 
-                  element = buttons.nth(i)
+              print()
+              print("=" * 80)
+              print("BEFORE CAP CONFIRM")
+              print("=" * 80)
+
+              print(
+                  "CAP:",
+                  cap.input_value()
+              )
+
+              print()
+              print("CLICKING CAP CONFIRM...")
+
+              confirm.click()
+
+              page.wait_for_timeout(5000)
+
+              print()
+              print("=" * 80)
+              print("AFTER CAP CONFIRM")
+              print("=" * 80)
+
+              confirmed = page.locator(
+                  "#GLUXZipConfirmationValue"
+              ).first
+
+              print(
+                  "CONFIRMED ZIP COUNT:",
+                  confirmed.count()
+              )
+
+              if confirmed.count() > 0:
 
                   try:
                       print(
-                          i,
-                          "visible=",
-                          element.is_visible(),
-                          "tag=",
-                          element.evaluate(
-                              "(el) => el.tagName"
-                          ),
-                          "href=",
-                          element.get_attribute("href")
+                          "CONFIRMED ZIP:",
+                          repr(
+                              confirmed.inner_text().strip()
+                          )
                       )
-                  except Exception as e:
+                  except Exception:
+                      pass
+
+              success = page.locator(
+                  "#GLUXHiddenSuccessDialog"
+              ).first
+
+              print()
+              print(
+                  "SUCCESS DIALOG COUNT:",
+                  success.count()
+              )
+
+              if success.count() > 0:
+
+                  print(
+                      "SUCCESS VISIBLE:",
+                      success.is_visible()
+                  )
+
+                  try:
                       print(
-                          i,
-                          "ERROR:",
-                          repr(e)
+                          "SUCCESS TEXT:",
+                          success.inner_text().strip()[:1500]
                       )
+                  except Exception:
+                      pass
 
-              if buttons.count() > 0:
+              close = page.locator(
+                  "#GLUXConfirmClose"
+              ).first
 
-                  target = None
+              print()
+              print(
+                  "CLOSE COUNT:",
+                  close.count()
+              )
 
-                  for i in range(buttons.count()):
+              if close.count() > 0:
 
-                      element = buttons.nth(i)
+                  print(
+                      "CLOSE VISIBLE:",
+                      close.is_visible()
+                  )
+
+              if close.count() > 0 and close.is_visible():
+
+                  print(
+                      "CLICKING CLOSE..."
+                  )
+
+                  close.click()
+
+                  page.wait_for_timeout(5000)
+
+              print()
+              print("=" * 80)
+              print("HOME AFTER LOCATION CHANGE")
+              print("=" * 80)
+
+              delivery_final = page.locator(
+                  "#glow-ingress-block"
+              ).first
+
+              print(
+                  "DELIVERY COUNT:",
+                  delivery_final.count()
+              )
+
+              if delivery_final.count() > 0:
+
+                  print(
+                      "DELIVERY:",
+                      delivery_final.inner_text().strip()
+                  )
+
+              print()
+              print("COOKIES:")
+
+              for cookie in context.cookies():
+
+                  print(
+                      cookie["name"],
+                      "=",
+                      cookie["value"][:300]
+                  )
+
+              print()
+              print("=" * 80)
+              print("NOW OPENING PRODUCT")
+              print("=" * 80)
+
+              page.goto(
+                  PRODUCT_URL,
+                  wait_until="domcontentloaded",
+                  timeout=45000
+              )
+
+              page.wait_for_timeout(5000)
+
+              print(
+                  "PRODUCT URL:",
+                  page.url
+              )
+
+              print(
+                  "PRODUCT TITLE:",
+                  repr(page.title())
+              )
+
+              print()
+              print("PRODUCT SELECTORS:")
+
+              selectors = [
+                  "#productTitle",
+                  "#buybox",
+                  "#glow-ingress-block",
+                  "#add-to-cart-button",
+                  "#buy-now-button",
+              ]
+
+              for selector in selectors:
+
+                  locator = page.locator(
+                      selector
+                  )
+
+                  count = locator.count()
+
+                  visible = False
+
+                  if count > 0:
 
                       try:
-                          if element.is_visible():
-                              target = element
-                              break
+                          visible = locator.first.is_visible()
                       except Exception:
                           pass
 
-                  if target:
-
-                      print()
-                      print(
-                          "CLICKING CONTINUE..."
-                      )
-
-                      target.click()
-
-                      page.wait_for_timeout(5000)
-
-                      print()
-                      print("=" * 80)
-                      print("AFTER CONTINUE")
-                      print("=" * 80)
-
-                      print(
-                          "TITLE:",
-                          repr(page.title())
-                      )
-
-                      print(
-                          "URL:",
-                          page.url
-                      )
-
-                      print()
-                      print("BODY LENGTH:")
-
-                      body_after = page.locator(
-                          "body"
-                      ).inner_text(
-                          timeout=10000
-                      )
-
-                      print(
-                          len(body_after)
-                      )
-
-                      print()
-                      print("BODY FIRST 5000 CHARACTERS:")
-
-                      print(
-                          body_after[:5000]
-                      )
-
-                      print()
-                      print("=" * 80)
-                      print("IMPORTANT SELECTORS AFTER CONTINUE")
-                      print("=" * 80)
-
-                      selectors = [
-                          "#glow-ingress-block",
-                          "#productTitle",
-                          "#buybox",
-                          "#add-to-cart-button",
-                          "#buy-now-button",
-                          "#captchacharacters",
-                          "#sp-cc-accept",
-                          "#nav-logo-sprites",
-                      ]
-
-                      for selector in selectors:
-
-                          locator = page.locator(
-                              selector
-                          )
-
-                          count = locator.count()
-
-                          visible = False
-
-                          if count > 0:
-
-                              try:
-                                  visible = (
-                                      locator.first.is_visible()
-                                  )
-                              except Exception:
-                                  pass
-
-                          print(
-                              selector,
-                              "count=",
-                              count,
-                              "visible=",
-                              visible
-                          )
-
-                          if count > 0 and visible:
-
-                              try:
-                                  text = locator.first.inner_text(
-                                      timeout=3000
-                                  ).strip()
-
-                                  print(
-                                      "  TEXT:",
-                                      repr(text[:1000])
-                                  )
-
-                              except Exception:
-                                  pass
-
-                      print()
-                      print("=" * 80)
-                      print("COOKIES")
-                      print("=" * 80)
-
-                      for cookie in context.cookies():
-
-                          print(
-                              cookie["name"],
-                              "=",
-                              cookie["value"][:300]
-                          )
-
-                  else:
-
-                      print(
-                          "NO VISIBLE CONTINUE BUTTON"
-                      )
-
-              else:
-
                   print(
-                      "CONTINUE BUTTON NOT FOUND"
+                      selector,
+                      "count=",
+                      count,
+                      "visible=",
+                      visible
                   )
+
+                  if count > 0 and visible:
+
+                      try:
+                          print(
+                              "  TEXT:",
+                              repr(
+                                  locator.first.inner_text(
+                                      timeout=3000
+                                  ).strip()[:2000]
+                              )
+                          )
+                      except Exception:
+                          pass
+
+              print()
+              print("=" * 80)
+              print("FINAL DELIVERY")
+              print("=" * 80)
+
+              delivery_product = page.locator(
+                  "#glow-ingress-block"
+              ).first
+
+              if delivery_product.count() > 0:
+
+                  try:
+                      print(
+                          delivery_product.inner_text().strip()
+                      )
+                  except Exception:
+                      pass
+
+              print()
+              print("=" * 80)
+              print("FINAL BUYBOX")
+              print("=" * 80)
+
+              buybox = page.locator(
+                  "#buybox"
+              ).first
+
+              if buybox.count() > 0:
+
+                  try:
+                      print(
+                          buybox.inner_text().strip()[:3000]
+                      )
+                  except Exception:
+                      pass
 
               print()
               print("=" * 80)

@@ -1,13 +1,10 @@
-name: Shopify Market Diagnostic
+name: Shopify Playwright Test
 
 on:
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 jobs:
-  shopify-market-diagnostic:
+  test-shopify:
     runs-on: ubuntu-latest
 
     steps:
@@ -25,25 +22,12 @@ jobs:
           pip install playwright
           playwright install --with-deps chromium
 
-      - name: Run Shopify market diagnostic
+      - name: Run Shopify diagnostic
         run: |
           python - <<'PY'
           from playwright.sync_api import sync_playwright
 
-
-          PRODUCT_URL = (
-              "https://www.gtavi-thealbum.com/"
-              "en-eu/products/"
-              "grand-theft-auto-vi-the-album-limited-edition-vinyl"
-          )
-
-          BASE_URL = "https://www.gtavi-thealbum.com"
-
-          LOCALIZATION_JS_URL = (
-              BASE_URL
-              + "/cdn/shop/t/5/assets/localization-form.js"
-          )
-
+          URL = "https://www.gtavi-thealbum.com/en-eu/products/grand-theft-auto-vi-the-album-limited-edition-vinyl"
 
           with sync_playwright() as p:
 
@@ -56,54 +40,41 @@ jobs:
               )
 
               context = browser.new_context(
-                  locale="it-IT",
+                  locale="en-US",
                   timezone_id="Europe/Rome",
                   viewport={
                       "width": 1440,
                       "height": 1000,
                   },
                   user_agent=(
-                      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                      "AppleWebKit/537.36 (KHTML, like Gecko) "
-                      "Chrome/153.0.0.0 Safari/537.36"
+                      "Mozilla/5.0 (X11; Linux x86_64) "
+                      "AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) "
+                      "Chrome/131.0.0.0 Safari/537.36"
                   ),
               )
 
               page = context.new_page()
 
-
-              # --------------------------------------------------
-              # OPEN PRODUCT
-              # --------------------------------------------------
-
               print("=" * 80)
-              print("OPENING EU PRODUCT")
+              print("OPENING SHOPIFY PRODUCT")
               print("=" * 80)
 
               page.goto(
-                  PRODUCT_URL,
+                  URL,
                   wait_until="domcontentloaded",
-                  timeout=60000,
+                  timeout=30000,
               )
 
-              page.wait_for_timeout(5000)
+              page.wait_for_timeout(3000)
 
               print()
-              print("CURRENT URL:")
+              print("INITIAL URL:")
               print(page.url)
 
               print()
-              print("TITLE:")
-              print(page.title())
-
-
-              # --------------------------------------------------
-              # INITIAL COOKIES
-              # --------------------------------------------------
-
-              print()
               print("=" * 80)
-              print("INITIAL LOCALIZATION COOKIES")
+              print("INITIAL COOKIES")
               print("=" * 80)
 
               for cookie in context.cookies():
@@ -117,183 +88,49 @@ jobs:
                           cookie["value"],
                       )
 
-
-              # --------------------------------------------------
-              # LOCALIZATION FORM
-              # --------------------------------------------------
-
               print()
               print("=" * 80)
               print("LOCALIZATION FORM")
               print("=" * 80)
 
-              localization_form = page.locator(
+              forms = page.locator(
                   'form[action="/localization"]'
               )
 
               print(
                   "Localization forms:",
-                  localization_form.count(),
+                  forms.count(),
               )
 
-              if localization_form.count() > 0:
+              if forms.count() > 0:
 
-                  form = localization_form.first
+                  form = forms.first
 
                   print()
                   print("FORM HTML:")
-
                   print(
                       form.evaluate(
-                          "el => el.outerHTML.substring(0, 12000)"
+                          "el => el.outerHTML"
                       )
                   )
 
                   print()
-                  print("INPUTS:")
+                  print("INPUT SUMMARY:")
 
                   inputs = form.locator("input")
 
                   for i in range(inputs.count()):
-
                       inp = inputs.nth(i)
 
-                      print(
-                          f"INPUT {i}: "
-                          f"name={inp.get_attribute('name')!r} "
-                          f"type={inp.get_attribute('type')!r} "
-                          f"value={inp.get_attribute('value')!r}"
-                      )
-
-                  print()
-                  print("BUTTONS:")
-
-                  buttons = form.locator("button")
-
-                  for i in range(buttons.count()):
-
-                      button = buttons.nth(i)
-
                       try:
-
                           print(
-                              f"BUTTON {i}: "
-                              f"text={button.inner_text().strip()!r} "
-                              f"name={button.get_attribute('name')!r} "
-                              f"value={button.get_attribute('value')!r} "
-                              f"type={button.get_attribute('type')!r}"
+                              f"INPUT {i}: "
+                              f"name={inp.get_attribute('name')!r} "
+                              f"type={inp.get_attribute('type')!r} "
+                              f"value={inp.get_attribute('value')!r}"
                           )
-
                       except Exception:
                           pass
-
-
-              # --------------------------------------------------
-              # ITALY ELEMENT
-              # --------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("ITALY ELEMENT")
-              print("=" * 80)
-
-              italy = page.get_by_text(
-                  "Italy",
-                  exact=True,
-              )
-
-              print(
-                  "Italy elements:",
-                  italy.count(),
-              )
-
-              for i in range(
-                  min(italy.count(), 5)
-              ):
-
-                  element = italy.nth(i)
-
-                  try:
-
-                      print()
-                      print(
-                          f"ITALY {i}:"
-                      )
-
-                      print(
-                          element.evaluate(
-                              """
-                              el => {
-                                  let p = el;
-                                  let result = [];
-
-                                  for (
-                                      let i = 0;
-                                      i < 5 && p;
-                                      i++,
-                                      p = p.parentElement
-                                  ) {
-                                      result.push({
-                                          tag: p.tagName,
-                                          id: p.id,
-                                          class: p.className,
-                                          outer:
-                                              p.outerHTML
-                                              .substring(0, 3000)
-                                      });
-                                  }
-
-                                  return result;
-                              }
-                              """
-                          )
-                      )
-
-                  except Exception as e:
-
-                      print(
-                          "ERROR:",
-                          repr(e),
-                      )
-
-
-              # --------------------------------------------------
-              # LOCALIZATION JAVASCRIPT
-              # --------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("LOCALIZATION JS")
-              print("=" * 80)
-
-              try:
-
-                  response = page.request.get(
-                      LOCALIZATION_JS_URL,
-                      timeout=30000,
-                  )
-
-                  print(
-                      "HTTP:",
-                      response.status,
-                  )
-
-                  js_text = response.text()
-
-                  print()
-                  print(js_text[:20000])
-
-              except Exception as e:
-
-                  print(
-                      "ERROR:",
-                      repr(e),
-                  )
-
-
-              # --------------------------------------------------
-              # CLICK ITALY
-              # --------------------------------------------------
 
               print()
               print("=" * 80)
@@ -302,87 +139,193 @@ jobs:
 
               try:
 
-                  italy = page.get_by_text(
-                      "Italy",
-                      exact=True,
+                  form = page.locator(
+                      'form[action="/localization"]'
                   ).first
 
-                  print(
-                      "Visible:",
-                      italy.is_visible(),
-                  )
+                  if form.count() == 0:
 
-                  print(
-                      "Enabled:",
-                      italy.is_enabled(),
-                  )
+                      print(
+                          "Localization form not found."
+                      )
 
-                  print(
-                      "Clicking Italy..."
-                  )
+                  else:
 
-                  italy.click(
-                      force=True,
-                  )
+                      print(
+                          "Opening country selector..."
+                      )
 
-                  page.wait_for_timeout(5000)
+                      selector_button = form.locator(
+                          "button.disclosure__button"
+                      ).first
 
-                  print()
-                  print("AFTER ITALY CLICK")
+                      print(
+                          "Selector button count:",
+                          selector_button.count(),
+                      )
 
-                  print(
-                      "URL:",
-                      page.url,
-                  )
-
-                  print()
-                  print("COOKIES:")
-
-                  for cookie in context.cookies():
-
-                      if cookie["name"] in (
-                          "localization",
-                          "cart_currency",
-                      ):
+                      if selector_button.count() > 0:
 
                           print(
-                              cookie["name"],
-                              "=",
-                              cookie["value"],
+                              "Selector visible:",
+                              selector_button.is_visible(),
                           )
 
+                          selector_button.click(
+                              force=True
+                          )
 
-                  print()
-                  print("PRODUCT TEXT:")
+                          page.wait_for_timeout(500)
 
-                  body_text = page.locator(
-                      "body"
-                  ).inner_text()
+                          italy_link = form.locator(
+                              'a.disclosure__link[data-value="IT"]'
+                          ).first
 
-                  for line in body_text.splitlines():
+                          print()
+                          print(
+                              "Italy link count:",
+                              italy_link.count(),
+                          )
 
-                      line = line.strip()
+                          if italy_link.count() > 0:
 
-                      if not line:
-                          continue
+                              print(
+                                  "Italy link visible:",
+                                  italy_link.is_visible(),
+                              )
 
-                      if any(
-                          x.lower() in line.lower()
-                          for x in [
-                              "sold out",
-                              "pre-order",
-                              "pre order",
-                              "add to cart",
-                              "123,99",
-                              "124.98",
-                              "$124.98",
-                              "€123,99",
-                              "italy",
-                          ]
-                      ):
+                              print()
+                              print(
+                                  "Italy link HTML:"
+                              )
+
+                              print(
+                                  italy_link.evaluate(
+                                      "el => el.outerHTML"
+                                  )
+                              )
+
+                              print()
+                              print(
+                                  "Clicking Italy..."
+                              )
+
+                              try:
+
+                                  with page.expect_navigation(
+                                      wait_until="domcontentloaded",
+                                      timeout=30000,
+                                  ):
+                                      italy_link.click(
+                                          force=True
+                                      )
+
+                              except Exception as navigation_error:
+
+                                  print(
+                                      "Navigation wait "
+                                      "exception:",
+                                      repr(
+                                          navigation_error
+                                      ),
+                                  )
+
+                                  # The form may submit without
+                                  # Playwright reporting a normal
+                                  # navigation event.
+                                  page.wait_for_timeout(
+                                      3000
+                                  )
+
+                              page.wait_for_timeout(3000)
+
+                              print()
+                              print(
+                                  "AFTER ITALY CLICK"
+                              )
+
+                              print(
+                                  "URL:",
+                                  page.url,
+                              )
+
+                              print()
+                              print("COOKIES:")
+
+                              for cookie in context.cookies():
+
+                                  if cookie["name"] in (
+                                      "localization",
+                                      "cart_currency",
+                                  ):
+
+                                      print(
+                                          cookie["name"],
+                                          "=",
+                                          cookie["value"],
+                                      )
+
+                              print()
+                              print(
+                                  "PRODUCT TEXT:"
+                              )
+
+                              body_text = page.locator(
+                                  "body"
+                              ).inner_text()
+
+                              interesting = (
+                                  "sold out",
+                                  "pre-order",
+                                  "pre order",
+                                  "add to cart",
+                                  "123,99",
+                                  "124.98",
+                                  "$124.98",
+                                  "€123,99",
+                                  "ships:",
+                              )
+
+                              seen = set()
+
+                              for line in body_text.splitlines():
+
+                                  line = line.strip()
+
+                                  if not line:
+                                      continue
+
+                                  if any(
+                                      keyword.lower()
+                                      in line.lower()
+                                      for keyword in interesting
+                                  ):
+
+                                      normalized = line
+
+                                      if normalized not in seen:
+
+                                          seen.add(
+                                              normalized
+                                          )
+
+                                          print(
+                                              repr(
+                                                  normalized
+                                              )
+                                          )
+
+                          else:
+
+                              print(
+                                  "Italy link not found."
+                              )
+
+                      else:
 
                           print(
-                              repr(line)
+                              "Country selector button "
+                              "not found."
                           )
 
               except Exception as e:
@@ -391,42 +334,6 @@ jobs:
                       "ITALY CLICK ERROR:",
                       repr(e),
                   )
-
-
-              # --------------------------------------------------
-              # CHECK LOCALIZATION FORM AFTER CLICK
-              # --------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("LOCALIZATION FORM AFTER ITALY CLICK")
-              print("=" * 80)
-
-              try:
-
-                  form = page.locator(
-                      'form[action="/localization"]'
-                  ).first
-
-                  if form.count() > 0:
-
-                      print(
-                          form.evaluate(
-                              "el => el.outerHTML.substring(0, 12000)"
-                          )
-                      )
-
-              except Exception as e:
-
-                  print(
-                      "FORM ERROR:",
-                      repr(e),
-                  )
-
-
-              # --------------------------------------------------
-              # FINAL COOKIES
-              # --------------------------------------------------
 
               print()
               print("=" * 80)
@@ -446,65 +353,39 @@ jobs:
                           cookie["value"],
                       )
 
+              print()
+              print("=" * 80)
+              print("FINAL URL")
+              print("=" * 80)
 
-              # --------------------------------------------------
-              # FINAL PRODUCT STATE
-              # --------------------------------------------------
+              print(page.url)
 
               print()
               print("=" * 80)
-              print("FINAL PRODUCT STATE")
+              print("FINAL PRODUCT CHECK")
               print("=" * 80)
-
-              print(
-                  "URL:",
-                  page.url,
-              )
-
-              print(
-                  "TITLE:",
-                  page.title(),
-              )
 
               body_text = page.locator(
                   "body"
               ).inner_text()
 
-              for line in body_text.splitlines():
+              checks = [
+                  "Sold out",
+                  "Pre-Order",
+                  "Pre-Order Now",
+                  "Add To Cart",
+                  "€123,99",
+                  "$124.98",
+                  "Ships: 20 November 2026",
+              ]
 
-                  line = line.strip()
+              for check in checks:
 
-                  if not line:
-                      continue
-
-                  if any(
-                      x.lower() in line.lower()
-                      for x in [
-                          "sold out",
-                          "pre-order",
-                          "pre order",
-                          "add to cart",
-                          "123,99",
-                          "124.98",
-                          "$124.98",
-                          "€123,99",
-                          "ships:",
-                      ]
-                  ):
-
-                      print(
-                          repr(line)
-                      )
-
-
-              # --------------------------------------------------
-              # END
-              # --------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("END")
-              print("=" * 80)
+                  print(
+                      f"{check!r}:",
+                      check.lower()
+                      in body_text.lower(),
+                  )
 
               browser.close()
 

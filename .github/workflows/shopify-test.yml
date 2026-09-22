@@ -67,33 +67,28 @@ jobs:
 
               print("URL:", page.url)
 
+              form = page.locator(
+                  'form[action="/localization"]'
+              ).first
+
               print()
               print("=" * 80)
               print("2. LOCALIZATION FORM")
               print("=" * 80)
 
-              form = page.locator(
-                  'form[action="/localization"]'
-              ).first
-
               print("Form count:", form.count())
-
-              if form.count() == 0:
-                  print("STOP: localization form NOT FOUND")
-                  browser.close()
-                  raise SystemExit(1)
 
               country_input = form.locator(
                   'input[name="country_code"]'
               ).first
 
               print(
-                  "country_code input count:",
+                  "country_code count:",
                   country_input.count()
               )
 
               if country_input.count() == 0:
-                  print("STOP: country_code input NOT FOUND")
+                  print("STOP: country_code NOT FOUND")
                   browser.close()
                   raise SystemExit(1)
 
@@ -104,37 +99,54 @@ jobs:
 
               print()
               print("=" * 80)
-              print("3. SET ITALY")
+              print("3. SET ITALY WITH JAVASCRIPT")
               print("=" * 80)
 
-              country_input.fill("IT")
+              page.evaluate(
+                  """
+                  () => {
+                      const input =
+                          document.querySelector(
+                              'form[action="/localization"] input[name="country_code"]'
+                          );
 
-              print(
-                  "country_code AFTER:",
-                  country_input.input_value()
+                      if (!input) {
+                          throw new Error(
+                              "country_code input not found"
+                          );
+                      }
+
+                      input.value = "IT";
+
+                      const form = input.closest("form");
+
+                      if (!form) {
+                          throw new Error(
+                              "localization form not found"
+                          );
+                      }
+
+                      form.submit();
+                  }
+                  """
               )
 
-              print("Submitting localization form...")
+              print("JavaScript form.submit() executed.")
 
-              with page.expect_navigation(
-                  wait_until="domcontentloaded",
-                  timeout=15000,
-              ):
-                  form.evaluate(
-                      "(form) => form.submit()"
-                  )
-
-              page.wait_for_timeout(2500)
-
-              print("URL after localization:")
-              print(page.url)
+              page.wait_for_timeout(4000)
 
               print()
               print("=" * 80)
-              print("4. COOKIES")
+              print("4. AFTER LOCALIZATION")
               print("=" * 80)
 
+              print("URL:", page.url)
+
+              print()
+              print("COOKIES:")
+
               for cookie in context.cookies():
+
                   if cookie["name"] in (
                       "localization",
                       "cart_currency",
@@ -147,7 +159,7 @@ jobs:
 
               print()
               print("=" * 80)
-              print("5. MARKET CHECK")
+              print("5. MARKET CONTENT")
               print("=" * 80)
 
               body_text = page.locator("body").inner_text()
@@ -163,7 +175,7 @@ jobs:
               )
 
               print()
-              print("Relevant lines:")
+              print("RELEVANT LINES:")
 
               for line in body_text.splitlines():
 
@@ -181,7 +193,7 @@ jobs:
 
               print()
               print("=" * 80)
-              print("6. H1")
+              print("6. PRODUCT")
               print("=" * 80)
 
               h1 = page.locator("h1").first
@@ -211,6 +223,7 @@ jobs:
                           continue
 
                       try:
+
                           tag = ancestor.evaluate(
                               "(el) => el.tagName"
                           )
@@ -231,10 +244,70 @@ jobs:
                           )
 
                       except Exception as e:
+
                           print(
                               "Ancestor error:",
                               e
                           )
+
+              print()
+              print("=" * 80)
+              print("8. PRODUCT BUTTONS")
+              print("=" * 80)
+
+              if h1.count() > 0:
+
+                  for level in range(1, 7):
+
+                      ancestor = h1.locator(
+                          "xpath=" + "/.." * level
+                      ).first
+
+                      if ancestor.count() == 0:
+                          continue
+
+                      buttons = ancestor.locator(
+                          "button"
+                      )
+
+                      if buttons.count() == 0:
+                          continue
+
+                      print()
+                      print(
+                          "LEVEL",
+                          level,
+                          "BUTTONS:",
+                          buttons.count()
+                      )
+
+                      for i in range(
+                          min(buttons.count(), 20)
+                      ):
+
+                          button = buttons.nth(i)
+
+                          try:
+
+                              print(
+                                  "BUTTON",
+                                  i,
+                                  "| visible=",
+                                  button.is_visible(),
+                                  "| disabled=",
+                                  button.is_disabled(),
+                                  "| text=",
+                                  repr(
+                                      button.inner_text()
+                                  )
+                              )
+
+                          except Exception as e:
+
+                              print(
+                                  "button error:",
+                                  e
+                              )
 
               print()
               print("=" * 80)

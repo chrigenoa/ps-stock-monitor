@@ -14,44 +14,36 @@ PRODUCTS = {
 "site": "playstation_direct",
 "url": "https://direct.playstation.com/it-it/buy-accessories/playstation5-pro-console-covers-marvels-wolverine-battle-yellow-limited-edition",
 },
-
 "ps5_pro": {
-    "name": "PlayStation 5 Pro",
-    "site": "playstation_direct",
-    "url": "https://direct.playstation.com/it-it/buy-consoles/playstation5-pro-console",
+"name": "PlayStation 5 Pro",
+"site": "playstation_direct",
+"url": "https://direct.playstation.com/it-it/buy-consoles/playstation5-pro-console",
 },
-
 "wolverine_battle_yellow_controller": {
-    "name": "DualSense Wolverine Battle Yellow",
-    "site": "playstation_direct",
-    "url": "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-marvels-wolverine-battle-yellow-limited-edition-for-ps5-pc-mac-mobile",
+"name": "DualSense Wolverine Battle Yellow",
+"site": "playstation_direct",
+"url": "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-marvels-wolverine-battle-yellow-limited-edition-for-ps5-pc-mac-mobile",
 },
-
 "gta_vi_black_controller": {
-    "name": "DualSense GTA VI Black",
-    "site": "playstation_direct",
-    "url": "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-grand-theft-auto-vi-black-limited-edition-for-ps5-pc-mac-mobile",
+"name": "DualSense GTA VI Black",
+"site": "playstation_direct",
+"url": "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-grand-theft-auto-vi-black-limited-edition-for-ps5-pc-mac-mobile",
 },
-
 "gta_vi_white_controller": {
-    "name": "DualSense GTA VI White",
-    "site": "playstation_direct",
-    "url": "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-grand-theft-auto-vi-white-limited-edition-for-ps5-pc-mac-mobile",
+"name": "DualSense GTA VI White",
+"site": "playstation_direct",
+"url": "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-grand-theft-auto-vi-white-limited-edition-for-ps5-pc-mac-mobile",
 },
-
 "wolverine_adamantium_controller": {
-    "name": "DualSense Wolverine Adamantium",
-    "site": "playstation_direct",
-    "url": "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-marvels-wolverine-adamantium-limited-edition-for-ps5-pc-mac-mobile",
+"name": "DualSense Wolverine Adamantium",
+"site": "playstation_direct",
+"url": "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-marvels-wolverine-adamantium-limited-edition-for-ps5-pc-mac-mobile",
 },
-
 "gta_vi_album_vinyl": {
-    "name": "GTA VI The Album - Limited-Edition Vinyl",
-    "site": "shopify",
-    "url": "https://www.gtavi-thealbum.com/en-eu/products/grand-theft-auto-vi-the-album-limited-edition-vinyl",
+"name": "GTA VI The Album - Limited-Edition Vinyl",
+"site": "shopify",
+"url": "https://www.gtavi-thealbum.com/en-eu/products/grand-theft-auto-vi-the-album-limited-edition-vinyl",
 },
-
-
 }
 
 STATE_FILE = "stock_state.json"
@@ -66,15 +58,9 @@ try:
 except Exception:
     return {}
 
-
 def save_state(state):
 with open(STATE_FILE, "w", encoding="utf-8") as f:
-json.dump(
-state,
-f,
-indent=2,
-ensure_ascii=False,
-)
+json.dump(state, f, indent=2, ensure_ascii=False)
 
 def send_telegram(notifications):
 token = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -85,7 +71,6 @@ if not token or not chat_id:
     return False
 
 telegram_url = f"https://api.telegram.org/bot{token}/sendMessage"
-
 success = True
 
 for item in notifications:
@@ -117,7 +102,6 @@ for item in notifications:
 
 return success
 
-
 def check_product(product):
 site = product.get("site")
 url = product["url"]
@@ -131,11 +115,9 @@ if site == "shopify":
 print(f"Unknown site adapter: {site}")
 return "UNKNOWN"
 
-
 def main():
 state = load_state()
 now = datetime.now(timezone.utc).isoformat()
-
 
 print("=" * 80)
 print("PLAYSTATION / SHOPIFY STOCK MONITOR")
@@ -155,13 +137,11 @@ for product_id, product in PRODUCTS.items():
     print(f"  Current:  {status}")
 
     if status == "AVAILABLE" and previous != "AVAILABLE":
-        notifications.append(
-            {
-                "id": product_id,
-                "name": product["name"],
-                "url": product["url"],
-            }
-        )
+        notifications.append({
+            "id": product_id,
+            "name": product["name"],
+            "url": product["url"],
+        })
 
     if status in ("AVAILABLE", "OUT_OF_STOCK"):
         state[product_id] = {
@@ -169,7 +149,6 @@ for product_id, product in PRODUCTS.items():
             "last_check": now,
             "last_result": status,
         }
-
     else:
         previous_data = state.get(product_id, {})
 
@@ -204,7 +183,6 @@ if notifications:
         print("Telegram notifications sent successfully.")
     else:
         print("Telegram notification failed.")
-
 else:
     print("No new availability detected.")
 
@@ -213,6 +191,5 @@ print("=" * 80)
 
 return 0
 
-
-if **name** == "**main**":
+if name == "main":
 sys.exit(main)

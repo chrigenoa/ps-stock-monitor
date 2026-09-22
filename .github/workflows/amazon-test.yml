@@ -1,4 +1,4 @@
-name: Amazon Postal Code Test 3
+name: Amazon Postal Code Test 4
 
 on:
   workflow_dispatch:
@@ -52,20 +52,156 @@ jobs:
               page = context.new_page()
 
               print("=" * 80)
-              print("AMAZON POSTAL CODE TEST 3")
+              print("AMAZON POSTAL CODE TEST 4")
               print("=" * 80)
 
-              page.goto(
-                  URL,
-                  wait_until="domcontentloaded",
-                  timeout=30000,
+              print()
+              print("LOADING AMAZON...")
+
+              try:
+                  response = page.goto(
+                      URL,
+                      wait_until="domcontentloaded",
+                      timeout=45000,
+                  )
+
+                  print(
+                      "HTTP STATUS:",
+                      response.status if response else "NO RESPONSE"
+                  )
+
+                  print(
+                      "FINAL URL:",
+                      page.url
+                  )
+
+              except Exception as e:
+                  print(
+                      "GOTO ERROR:",
+                      repr(e)
+                  )
+
+              page.wait_for_timeout(5000)
+
+              print()
+              print("=" * 80)
+              print("INITIAL PAGE CHECK")
+              print("=" * 80)
+
+              print(
+                  "TITLE:",
+                  repr(page.title())
               )
 
-              page.wait_for_timeout(3000)
+              print(
+                  "URL:",
+                  page.url
+              )
+
+              body_text = page.locator("body").inner_text(
+                  timeout=10000
+              )
+
+              print()
+              print("BODY LENGTH:")
+              print(len(body_text))
+
+              print()
+              print("BODY FIRST 3000 CHARACTERS:")
+              print(body_text[:3000])
+
+              print()
+              print("=" * 80)
+              print("IMPORTANT SELECTORS")
+              print("=" * 80)
+
+              selectors = [
+                  "#glow-ingress-block",
+                  "#productTitle",
+                  "#buybox",
+                  "#add-to-cart-button",
+                  "#buy-now-button",
+                  "#captchacharacters",
+                  "#sp-cc-accept",
+                  "#nav-logo-sprites",
+              ]
+
+              for selector in selectors:
+
+                  locator = page.locator(selector)
+
+                  count = locator.count()
+
+                  visible = False
+
+                  if count > 0:
+
+                      try:
+                          visible = locator.first.is_visible()
+                      except Exception:
+                          pass
+
+                  print(
+                      selector,
+                      "count=",
+                      count,
+                      "visible=",
+                      visible
+                  )
+
+                  if count > 0 and visible:
+
+                      try:
+                          text = locator.first.inner_text(
+                              timeout=3000
+                          ).strip()
+
+                          print(
+                              "  TEXT:",
+                              repr(text[:1000])
+                          )
+
+                      except Exception:
+                          pass
 
               delivery = page.locator(
                   "#glow-ingress-block"
               ).first
+
+              if delivery.count() == 0:
+
+                  print()
+                  print("=" * 80)
+                  print("DELIVERY ELEMENT NOT FOUND")
+                  print("=" * 80)
+
+                  print(
+                      "Amazon did not expose #glow-ingress-block."
+                  )
+
+                  print()
+                  print("COOKIES:")
+
+                  for cookie in context.cookies():
+
+                      print(
+                          cookie["name"],
+                          "=",
+                          cookie["value"][:200]
+                      )
+
+                  browser.close()
+                  raise SystemExit(0)
+
+              if not delivery.is_visible():
+
+                  print()
+                  print("=" * 80)
+                  print("DELIVERY ELEMENT NOT VISIBLE")
+                  print("=" * 80)
+
+                  browser.close()
+                  raise SystemExit(0)
 
               print()
               print("=" * 80)
@@ -81,17 +217,70 @@ jobs:
 
               delivery.click()
 
-              page.wait_for_timeout(1500)
+              page.wait_for_timeout(2000)
+
+              print()
+              print("=" * 80)
+              print("CAP DIALOG")
+              print("=" * 80)
 
               cap = page.locator(
                   "#GLUXZipUpdateInput"
               ).first
+
+              print(
+                  "CAP COUNT:",
+                  cap.count()
+              )
+
+              if cap.count() == 0:
+
+                  print(
+                      "CAP INPUT NOT FOUND"
+                  )
+
+                  print(
+                      "BODY:",
+                      page.locator("body").inner_text()[:5000]
+                  )
+
+                  browser.close()
+                  raise SystemExit(1)
+
+              print(
+                  "CAP VISIBLE:",
+                  cap.is_visible()
+              )
 
               cap.fill(CAP)
 
               confirm = page.locator(
                   "#GLUXZipInputSection input[type='submit']"
               ).first
+
+              print(
+                  "CONFIRM COUNT:",
+                  confirm.count()
+              )
+
+              if confirm.count() == 0:
+
+                  print(
+                      "CAP CONFIRM NOT FOUND"
+                  )
+
+                  browser.close()
+                  raise SystemExit(1)
+
+              print(
+                  "CONFIRM VISIBLE:",
+                  confirm.is_visible()
+              )
+
+              print(
+                  "CONFIRM DISABLED:",
+                  confirm.is_disabled()
+              )
 
               print()
               print("=" * 80)
@@ -104,52 +293,15 @@ jobs:
               )
 
               print()
-              print("RELEVANT INPUTS:")
+              print("COOKIES BEFORE CAP CONFIRM:")
 
-              inputs = page.locator(
-                  "input"
-              )
+              for cookie in context.cookies():
 
-              for i in range(
-                  inputs.count()
-              ):
-
-                  element = inputs.nth(i)
-
-                  try:
-                      visible = element.is_visible()
-                  except Exception:
-                      visible = False
-
-                  element_id = element.get_attribute("id")
-                  name = element.get_attribute("name")
-                  value = element.get_attribute("value")
-
-                  if (
-                      visible
-                      or (
-                          element_id
-                          and "GLUX" in element_id
-                      )
-                      or (
-                          name
-                          and (
-                              "location" in name.lower()
-                              or "zip" in name.lower()
-                              or "postal" in name.lower()
-                          )
-                      )
-                  ):
-
-                      print(
-                          i,
-                          "id=",
-                          element_id,
-                          "name=",
-                          name,
-                          "value=",
-                          repr(value)
-                      )
+                  print(
+                      cookie["name"],
+                      "=",
+                      cookie["value"][:200]
+                  )
 
               print()
               print("CLICKING CAP CONFIRM...")
@@ -163,18 +315,26 @@ jobs:
               print("AFTER CAP CONFIRM")
               print("=" * 80)
 
-              print()
-              print("CONFIRMED ZIP:")
-
               confirmed = page.locator(
                   "#GLUXZipConfirmationValue"
               ).first
 
               print(
-                  repr(
-                      confirmed.inner_text().strip()
-                  )
+                  "CONFIRMED ZIP COUNT:",
+                  confirmed.count()
               )
+
+              if confirmed.count() > 0:
+
+                  try:
+                      print(
+                          "CONFIRMED ZIP:",
+                          repr(
+                              confirmed.inner_text().strip()
+                          )
+                      )
+                  except Exception:
+                      pass
 
               print()
               print("COOKIES AFTER CAP CONFIRM:")
@@ -184,55 +344,12 @@ jobs:
                   print(
                       cookie["name"],
                       "=",
-                      cookie["value"][:200]
+                      cookie["value"][:300]
                   )
 
               print()
               print("=" * 80)
-              print("GLUX LOCATION ELEMENTS")
-              print("=" * 80)
-
-              glux = page.locator(
-                  "[id^='GLUX']"
-              )
-
-              print(
-                  "COUNT:",
-                  glux.count()
-              )
-
-              for i in range(
-                  glux.count()
-              ):
-
-                  element = glux.nth(i)
-
-                  element_id = element.get_attribute(
-                      "id"
-                  )
-
-                  tag = element.evaluate(
-                      "(el) => el.tagName"
-                  )
-
-                  try:
-                      text = element.inner_text().strip()
-                  except Exception:
-                      text = ""
-
-                  if text:
-                      text = text[:300]
-
-                  print(
-                      i,
-                      tag,
-                      element_id,
-                      repr(text)
-                  )
-
-              print()
-              print("=" * 80)
-              print("HIDDEN SUCCESS DIALOG")
+              print("SUCCESS DIALOG")
               print("=" * 80)
 
               success = page.locator(
@@ -240,17 +357,27 @@ jobs:
               ).first
 
               print(
-                  "VISIBLE:",
-                  success.is_visible()
+                  "COUNT:",
+                  success.count()
               )
 
-              print(
-                  success.inner_text().strip()
-              )
+              if success.count() > 0:
+
+                  print(
+                      "VISIBLE:",
+                      success.is_visible()
+                  )
+
+                  try:
+                      print(
+                          success.inner_text().strip()
+                      )
+                  except Exception:
+                      pass
 
               print()
               print("=" * 80)
-              print("CLOSING SUCCESS DIALOG")
+              print("CONFIRM CLOSE")
               print("=" * 80)
 
               close = page.locator(
@@ -262,12 +389,32 @@ jobs:
                   close.count()
               )
 
-              print(
-                  "VISIBLE:",
-                  close.is_visible()
-              )
+              if close.count() > 0:
+
+                  print(
+                      "VISIBLE:",
+                      close.is_visible()
+                  )
+
+                  print(
+                      "DISABLED:",
+                      close.is_disabled()
+                  )
+
+                  try:
+                      print(
+                          "TEXT:",
+                          repr(
+                              close.get_attribute("value")
+                          )
+                      )
+                  except Exception:
+                      pass
 
               if close.count() > 0 and close.is_visible():
+
+                  print()
+                  print("CLICKING CONFIRM CLOSE...")
 
                   close.click()
 
@@ -278,36 +425,64 @@ jobs:
               print("AFTER CLOSING")
               print("=" * 80)
 
-              print()
-              print("DELIVERY:")
+              delivery_final = page.locator(
+                  "#glow-ingress-block"
+              ).first
 
               print(
-                  page.locator(
-                      "#glow-ingress-block"
-                  ).first.inner_text().strip()
+                  "DELIVERY COUNT:",
+                  delivery_final.count()
               )
 
+              if delivery_final.count() > 0:
+
+                  try:
+                      print(
+                          "DELIVERY:",
+                          delivery_final.inner_text().strip()
+                      )
+                  except Exception as e:
+                      print(
+                          "DELIVERY ERROR:",
+                          repr(e)
+                      )
+
               print()
-              print("COOKIES:")
+              print("COOKIES AFTER CLOSING:")
 
               for cookie in context.cookies():
 
                   print(
                       cookie["name"],
                       "=",
-                      cookie["value"][:200]
+                      cookie["value"][:300]
                   )
 
               print()
-              print("FINAL BUYBOX:")
+              print("=" * 80)
+              print("FINAL BUYBOX")
+              print("=" * 80)
 
               buybox = page.locator(
                   "#buybox"
               ).first
 
               print(
-                  buybox.inner_text().strip()[:3000]
+                  "BUYBOX COUNT:",
+                  buybox.count()
               )
+
+              if buybox.count() > 0:
+
+                  try:
+                      print(
+                          buybox.inner_text().strip()[:3000]
+                      )
+                  except Exception as e:
+                      print(
+                          "BUYBOX ERROR:",
+                          repr(e)
+                      )
 
               print()
               print("=" * 80)

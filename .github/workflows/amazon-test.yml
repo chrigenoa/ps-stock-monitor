@@ -1,10 +1,10 @@
-name: Amazon Offers Diagnostic
+name: Amazon Offers Test
 
 on:
   workflow_dispatch:
 
 jobs:
-  test-amazon:
+  amazon-offers:
     runs-on: ubuntu-latest
 
     steps:
@@ -16,7 +16,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install Playwright
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install playwright
@@ -24,760 +24,408 @@ jobs:
 
       - name: Analyze Amazon offers
         run: |
-          python - <<'PY'
+          cat > amazon_offers_test.py <<'PY'
           from playwright.sync_api import sync_playwright
+          import re
 
-          AMAZON_HOME = "https://www.amazon.it/"
           PRODUCT_URL = "https://www.amazon.it/dp/B0H9HFPRRD/"
-          CAP = "00100"
+          ZIP_CODE = "00100"
+
+          def clean(text):
+              return re.sub(r"\s+", " ", text or "").strip()
 
           with sync_playwright() as p:
-
-              browser = p.chromium.launch(
-                  headless=True,
-                  args=[
-                      "--no-sandbox",
-                      "--disable-dev-shm-usage",
-                  ],
-              )
-
+              browser = p.chromium.launch(headless=True)
               context = browser.new_context(
                   locale="it-IT",
                   timezone_id="Europe/Rome",
-                  viewport={
-                      "width": 1440,
-                      "height": 1000,
-                  },
+                  viewport={"width": 1440, "height": 1000},
               )
 
               page = context.new_page()
 
               print("=" * 80)
-              print("AMAZON OFFERS DIAGNOSTIC")
+              print("1. OPEN AMAZON")
               print("=" * 80)
 
-              # --------------------------------------------------
-              # 1. AMAZON HOME
-              # --------------------------------------------------
-
-              print()
-              print("LOADING AMAZON HOME...")
-
               response = page.goto(
-                  AMAZON_HOME,
+                  "https://www.amazon.it/",
                   wait_until="domcontentloaded",
-                  timeout=45000,
+                  timeout=60000,
               )
 
-              print(
-                  "HTTP STATUS:",
-                  response.status if response else "NO RESPONSE"
-              )
+              print("HTTP:", response.status if response else "NONE")
+              print("URL:", page.url)
+              print("TITLE:", page.title())
 
-              page.wait_for_timeout(4000)
+              page.wait_for_timeout(3000)
 
-              # Gestione pagina intermedia
+              # Amazon sometimes shows the intermediate "Continua con gli acquisti"
+              # page before exposing the normal site.
               continue_buttons = page.get_by_text(
                   "Continua con gli acquisti",
                   exact=True
               )
 
-              target = None
+              if continue_buttons.count() > 0:
+                  clicked = False
 
-              for i in range(continue_buttons.count()):
+                  for i in range(continue_buttons.count()):
+                      try:
+                          button = continue_buttons.nth(i)
 
-                  element = continue_buttons.nth(i)
+                          if button.is_visible():
+                              print("CLICK: Continua con gli acquisti")
+                              button.click()
+                              page.wait_for_timeout(5000)
+                              clicked = True
+                              break
 
-                  try:
+                      except Exception:
+                          pass
 
-                      if element.is_visible():
-
-                          target = element
-                          break
-
-                  except Exception:
-
-                      pass
-
-              if target:
-
-                  print("INTERMEDIATE PAGE DETECTED")
-                  print("CLICKING CONTINUE SHOPPING...")
-
-                  target.click()
-
-                  page.wait_for_timeout(5000)
-
-              # --------------------------------------------------
-              # 2. DELIVERY
-              # --------------------------------------------------
+                  print("CONTINUE CLICKED:", clicked)
 
               print()
               print("=" * 80)
-              print("CURRENT DELIVERY")
+              print("2. SET DELIVERY ZIP")
               print("=" * 80)
 
-              delivery = page.locator(
-                  "#glow-ingress-block"
-              ).first
+              ingress = page.locator("#glow-ingress-block")
 
-              print(
-                  "DELIVERY COUNT:",
-                  delivery.count()
-              )
-
-              if delivery.count() == 0:
-
-                  print("DELIVERY ELEMENT NOT FOUND")
-
+              if ingress.count() == 0:
+                  print("ERROR: #glow-ingress-block NOT FOUND")
                   browser.close()
                   raise SystemExit(1)
 
-              print(
-                  "DELIVERY:",
-                  delivery.inner_text().strip()
-              )
+              print("DELIVERY BEFORE:", repr(clean(ingress.inner_text())))
 
-              # --------------------------------------------------
-              # 3. SET ITALIAN CAP
-              # --------------------------------------------------
+              ingress.click()
+              page.wait_for_timeout(1500)
 
-              print()
-              print("=" * 80)
-              print("SETTING ITALIAN CAP")
-              print("=" * 80)
+              zip_input = page.locator("#GLUXZipUpdateInput")
 
-              delivery.click()
-
-              page.wait_for_timeout(2000)
-
-              cap = page.locator(
-                  "#GLUXZipUpdateInput"
-              ).first
-
-              if cap.count() == 0:
-
-                  print("CAP INPUT NOT FOUND")
-
+              if zip_input.count() == 0:
+                  print("ERROR: ZIP INPUT NOT FOUND")
                   browser.close()
                   raise SystemExit(1)
 
-              cap.fill(CAP)
+              print("ZIP INPUT FOUND")
+
+              zip_input.fill(ZIP_CODE)
 
               confirm = page.locator(
                   "#GLUXZipInputSection input[type='submit']"
-              ).first
-
-              print(
-                  "CAP:",
-                  cap.input_value()
               )
 
-              print(
-                  "CONFIRM COUNT:",
-                  confirm.count()
-              )
+              print("ZIP CONFIRM COUNT:", confirm.count())
 
-              print(
-                  "CONFIRM VISIBLE:",
-                  confirm.is_visible()
-              )
+              if confirm.count() == 0:
+                  print("ERROR: ZIP CONFIRM NOT FOUND")
+                  browser.close()
+                  raise SystemExit(1)
 
-              print(
-                  "CONFIRM DISABLED:",
-                  confirm.is_disabled()
-              )
+              confirm.first.click()
+              page.wait_for_timeout(3000)
 
-              confirm.click()
-
-              page.wait_for_timeout(5000)
-
-              confirmed = page.locator(
+              confirmation = page.locator(
                   "#GLUXZipConfirmationValue"
-              ).first
+              )
 
-              if confirmed.count() > 0:
+              if confirmation.count() > 0:
+                  print(
+                      "CONFIRMED ZIP:",
+                      repr(clean(confirmation.first.inner_text()))
+                  )
 
-                  try:
-
-                      print(
-                          "CONFIRMED ZIP:",
-                          repr(
-                              confirmed.inner_text().strip()
-                          )
-                      )
-
-                  except Exception:
-
-                      pass
-
-              # --------------------------------------------------
-              # 4. OPEN PRODUCT
-              # --------------------------------------------------
+              print("COOKIES AFTER ZIP:")
+              for cookie in context.cookies():
+                  print(
+                      " ",
+                      cookie["name"],
+                      "=",
+                      cookie["value"][:120]
+                  )
 
               print()
               print("=" * 80)
-              print("OPENING PRODUCT")
+              print("3. OPEN PRODUCT")
               print("=" * 80)
 
               page.goto(
                   PRODUCT_URL,
                   wait_until="domcontentloaded",
-                  timeout=45000,
+                  timeout=60000,
               )
 
-              page.wait_for_timeout(6000)
+              page.wait_for_timeout(5000)
 
-              print(
-                  "PRODUCT URL:",
-                  page.url
-              )
+              print("PRODUCT URL:", page.url)
+              print("TITLE:", page.title())
 
-              print(
-                  "TITLE:",
-                  page.title()
-              )
-
-              # --------------------------------------------------
-              # 5. BASIC PRODUCT INFO
-              # --------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("BASIC PRODUCT INFO")
-              print("=" * 80)
-
-              title = page.locator(
-                  "#productTitle"
-              ).first
+              product_title = page.locator("#productTitle").first
 
               print(
                   "PRODUCT TITLE COUNT:",
-                  title.count()
+                  page.locator("#productTitle").count()
               )
 
-              if title.count() > 0:
+              if product_title.count() > 0:
+                  print(
+                      "PRODUCT:",
+                      clean(product_title.inner_text())
+                  )
 
+              delivery = page.locator("#glow-ingress-block").first
+
+              if delivery.count() > 0:
+                  print(
+                      "DELIVERY:",
+                      repr(clean(delivery.inner_text()))
+                  )
+
+              print()
+              print("=" * 80)
+              print("4. FIND OFFER-LISTING LINK")
+              print("=" * 80)
+
+              offer_link = page.locator(
+                  "a[href*='/gp/offer-listing/B0H9HFPRRD/']"
+              ).first
+
+              print("OFFER LINK COUNT:", offer_link.count())
+
+              if offer_link.count() == 0:
+                  print("ERROR: OFFER-LISTING LINK NOT FOUND")
+                  browser.close()
+                  raise SystemExit(1)
+
+              href = offer_link.get_attribute("href")
+
+              print("OFFER HREF:", href)
+
+              offer_url = page.url.split("/dp/")[0] + href
+
+              print("OFFER URL:", offer_url)
+
+              print()
+              print("=" * 80)
+              print("5. OPEN OFFER LISTING")
+              print("=" * 80)
+
+              offer_page = context.new_page()
+
+              offer_response = offer_page.goto(
+                  offer_url,
+                  wait_until="domcontentloaded",
+                  timeout=60000,
+              )
+
+              print(
+                  "HTTP:",
+                  offer_response.status if offer_response else "NONE"
+              )
+              print("URL:", offer_page.url)
+              print("TITLE:", offer_page.title())
+
+              offer_page.wait_for_timeout(5000)
+
+              body_text = offer_page.locator("body").inner_text()
+
+              print()
+              print("=" * 80)
+              print("6. OFFER PAGE BASIC TEXT")
+              print("=" * 80)
+
+              print(body_text[:12000])
+
+              print()
+              print("=" * 80)
+              print("7. OFFER-RELATED ELEMENTS")
+              print("=" * 80)
+
+              selectors = [
+                  "[id*='offer']",
+                  "[class*='offer']",
+                  "[id*='buybox']",
+                  "[class*='buybox']",
+                  "[id*='price']",
+                  "[class*='price']",
+                  "input[type='submit']",
+                  "button",
+                  "a",
+              ]
+
+              seen = set()
+              element_number = 0
+
+              for selector in selectors:
                   try:
+                      elements = offer_page.locator(selector)
 
-                      print(
-                          "PRODUCT TITLE:",
-                          title.inner_text().strip()
-                      )
+                      for i in range(min(elements.count(), 200)):
+                          element = elements.nth(i)
+
+                          try:
+                              text = clean(element.inner_text())
+                              aria = clean(
+                                  element.get_attribute("aria-label")
+                              )
+                              href = element.get_attribute("href")
+                              element_id = element.get_attribute("id")
+                              classes = element.get_attribute("class")
+
+                              combined = " | ".join(
+                                  x for x in [
+                                      text,
+                                      aria,
+                                      href,
+                                      element_id,
+                                      classes,
+                                  ]
+                                  if x
+                              )
+
+                              if not combined:
+                                  continue
+
+                              key = combined[:1000]
+
+                              if key in seen:
+                                  continue
+
+                              seen.add(key)
+
+                              interesting = any(
+                                  word.lower() in combined.lower()
+                                  for word in [
+                                      "disponibile",
+                                      "esaurito",
+                                      "non disponibile",
+                                      "acquista",
+                                      "carrello",
+                                      "venduto",
+                                      "spedito",
+                                      "amazon",
+                                      "€",
+                                      "EUR",
+                                      "prezzo",
+                                      "offerta",
+                                      "invito",
+                                      "consegna",
+                                      "00100",
+                                  ]
+                              )
+
+                              if not interesting:
+                                  continue
+
+                              element_number += 1
+
+                              print()
+                              print("ELEMENT", element_number)
+                              print("SELECTOR:", selector)
+                              print("TAG:", element.evaluate(
+                                  "(el) => el.tagName"
+                              ))
+                              print("TEXT:", repr(text[:1500]))
+                              print("ARIA:", repr(aria[:500]))
+                              print("HREF:", repr(href))
+                              print("ID:", repr(element_id))
+                              print("CLASS:", repr(classes[:500] if classes else None))
+
+                          except Exception:
+                              pass
 
                   except Exception:
-
                       pass
 
-              delivery_product = page.locator(
-                  "#glow-ingress-block"
-              ).first
-
-              print(
-                  "DELIVERY:",
-                  delivery_product.inner_text().strip()
-                  if delivery_product.count() > 0
-                  else "NOT FOUND"
-              )
-
-              # --------------------------------------------------
-              # 6. COMPLETE BUYBOX
-              # --------------------------------------------------
-
               print()
               print("=" * 80)
-              print("COMPLETE BUYBOX")
+              print("8. PURCHASE / AVAILABILITY KEYWORDS")
               print("=" * 80)
-
-              buybox = page.locator(
-                  "#buybox"
-              ).first
-
-              print(
-                  "BUYBOX COUNT:",
-                  buybox.count()
-              )
-
-              if buybox.count() > 0:
-
-                  try:
-
-                      print(
-                          buybox.inner_text().strip()[:10000]
-                      )
-
-                  except Exception as e:
-
-                      print(
-                          "BUYBOX TEXT ERROR:",
-                          repr(e)
-                      )
-
-              # --------------------------------------------------
-              # 7. PURCHASE-RELATED TEXT
-              # --------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("PURCHASE-RELATED TEXT")
-              print("=" * 80)
-
-              body_text = page.locator(
-                  "body"
-              ).inner_text(
-                  timeout=10000
-              )
 
               keywords = [
                   "Disponibile",
                   "Non disponibile",
                   "Esaurito",
-                  "su invito",
+                  "Disponibile su invito",
                   "Richiedi invito",
                   "Aggiungi al carrello",
                   "Acquista ora",
-                  "Visualizza tutte le opzioni di acquisto",
                   "Venduto da",
-                  "Speditore",
+                  "Spedito da",
                   "Amazon",
+                  "Prezzo",
+                  "€",
+                  "EUR",
+                  "Consegna",
+                  "00100",
               ]
-
-              for keyword in keywords:
-
-                  print()
-                  print(
-                      "KEYWORD:",
-                      repr(keyword)
-                  )
-
-                  found = False
-
-                  for line in body_text.splitlines():
-
-                      line_clean = line.strip()
-
-                      if keyword.lower() in line_clean.lower():
-
-                          print(
-                              " ",
-                              repr(line_clean[:500])
-                          )
-
-                          found = True
-
-                  if not found:
-
-                      print("  NOT FOUND")
-
-              # --------------------------------------------------
-              # 8. PURCHASE BUTTONS
-              # --------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("PURCHASE BUTTONS")
-              print("=" * 80)
-
-              buttons = page.locator(
-                  "button, input[type='submit'], input[type='button'], a"
-              )
-
-              print(
-                  "TOTAL CANDIDATE ELEMENTS:",
-                  buttons.count()
-              )
-
-              purchase_terms = [
-                  "carrello",
-                  "acquista",
-                  "invito",
-                  "opzioni di acquisto",
-                  "disponibile",
-                  "ordine",
-                  "buy",
-                  "cart",
-              ]
-
-              for i in range(buttons.count()):
-
-                  element = buttons.nth(i)
-
-                  try:
-
-                      if not element.is_visible():
-                          continue
-
-                      text = ""
-
-                      try:
-
-                          text = element.inner_text().strip()
-
-                      except Exception:
-
-                          pass
-
-                      aria = element.get_attribute(
-                          "aria-label"
-                      ) or ""
-
-                      value = element.get_attribute(
-                          "value"
-                      ) or ""
-
-                      href = element.get_attribute(
-                          "href"
-                      ) or ""
-
-                      combined = " ".join(
-                          [
-                              text,
-                              aria,
-                              value,
-                              href,
-                          ]
-                      )
-
-                      if not any(
-                          term.lower()
-                          in combined.lower()
-                          for term in purchase_terms
-                      ):
-
-                          continue
-
-                      print()
-                      print(
-                          "ELEMENT",
-                          i
-                      )
-
-                      print(
-                          "  TAG:",
-                          element.evaluate(
-                              "(e) => e.tagName"
-                          )
-                      )
-
-                      print(
-                          "  TEXT:",
-                          repr(text[:1000])
-                      )
-
-                      print(
-                          "  ARIA:",
-                          repr(aria[:1000])
-                      )
-
-                      print(
-                          "  VALUE:",
-                          repr(value[:1000])
-                      )
-
-                      print(
-                          "  HREF:",
-                          repr(href[:1000])
-                      )
-
-                      print(
-                          "  ID:",
-                          repr(
-                              element.get_attribute("id")
-                          )
-                      )
-
-                      print(
-                          "  CLASS:",
-                          repr(
-                              element.get_attribute("class")
-                          )
-                      )
-
-                      print(
-                          "  DISABLED:",
-                          element.is_disabled()
-                          if element.evaluate(
-                              "(e) => ['BUTTON','INPUT'].includes(e.tagName)"
-                          )
-                          else "N/A"
-                      )
-
-                  except Exception as e:
-
-                      print(
-                          "ELEMENT ERROR:",
-                          repr(e)
-                      )
-
-              # --------------------------------------------------
-              # 9. LINKS TO ALL PURCHASE OPTIONS
-              # --------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("ALL PURCHASE OPTION LINKS")
-              print("=" * 80)
-
-              links = page.locator(
-                  "a"
-              )
-
-              for i in range(links.count()):
-
-                  link = links.nth(i)
-
-                  try:
-
-                      if not link.is_visible():
-                          continue
-
-                      text = link.inner_text().strip()
-
-                      if (
-                          "opzioni di acquisto"
-                          in text.lower()
-                          or
-                          "acquista"
-                          in text.lower()
-                          or
-                          "carrello"
-                          in text.lower()
-                          or
-                          "invito"
-                          in text.lower()
-                      ):
-
-                          print()
-                          print(
-                              "LINK",
-                              i
-                          )
-
-                          print(
-                              "  TEXT:",
-                              repr(text[:1000])
-                          )
-
-                          print(
-                              "  HREF:",
-                              repr(
-                                  link.get_attribute("href")
-                              )
-                          )
-
-                          print(
-                              "  ID:",
-                              repr(
-                                  link.get_attribute("id")
-                              )
-                          )
-
-                          print(
-                              "  CLASS:",
-                              repr(
-                                  link.get_attribute("class")
-                              )
-                          )
-
-                  except Exception:
-
-                      pass
-
-              # --------------------------------------------------
-              # 10. OFFER CONTAINERS
-              # --------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("POSSIBLE OFFER CONTAINERS")
-              print("=" * 80)
-
-              selectors = [
-                  "#buybox",
-                  "#buybox_feature_div",
-                  "#desktop_buybox",
-                  "#olp_feature_div",
-                  "#olp",
-                  "#aod-container",
-                  "#aod-offer",
-                  "[id*='offer']",
-                  "[class*='offer']",
-              ]
-
-              for selector in selectors:
-
-                  try:
-
-                      locator = page.locator(
-                          selector
-                      )
-
-                      count = locator.count()
-
-                      print()
-                      print(
-                          "SELECTOR:",
-                          selector,
-                          "COUNT:",
-                          count
-                      )
-
-                      for i in range(
-                          min(count, 10)
-                      ):
-
-                          element = locator.nth(i)
-
-                          try:
-
-                              if not element.is_visible():
-                                  continue
-
-                              text = element.inner_text().strip()
-
-                              if text:
-
-                                  print(
-                                      "  ELEMENT",
-                                      i,
-                                      "TEXT:",
-                                      repr(
-                                          text[:3000]
-                                      )
-                                  )
-
-                          except Exception:
-
-                              pass
-
-                  except Exception as e:
-
-                      print(
-                          "SELECTOR ERROR:",
-                          selector,
-                          repr(e)
-                      )
-
-              # --------------------------------------------------
-              # 11. PRICE ELEMENTS
-              # --------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("PRICE ELEMENTS")
-              print("=" * 80)
-
-              price_selectors = [
-                  ".a-price",
-                  ".a-price-whole",
-                  ".a-price-fraction",
-                  "#corePrice_feature_div",
-                  "#apex_desktop",
-                  "#price",
-                  "#priceblock_ourprice",
-                  "#priceblock_dealprice",
-              ]
-
-              for selector in price_selectors:
-
-                  locator = page.locator(
-                      selector
-                  )
-
-                  print(
-                      selector,
-                      "COUNT:",
-                      locator.count()
-                  )
-
-                  for i in range(
-                      min(locator.count(), 10)
-                  ):
-
-                      element = locator.nth(i)
-
-                      try:
-
-                          if element.is_visible():
-
-                              print(
-                                  "  TEXT:",
-                                  repr(
-                                      element.inner_text().strip()[:1000]
-                                  )
-                              )
-
-                      except Exception:
-
-                          pass
-
-              # --------------------------------------------------
-              # 12. FINAL BODY SNIPPET
-              # --------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("BODY AROUND PURCHASE TERMS")
-              print("=" * 80)
 
               lines = body_text.splitlines()
 
-              interesting_indexes = []
+              for keyword in keywords:
+                  print()
+                  print("KEYWORD:", repr(keyword))
 
-              search_terms = [
-                  "disponibile",
-                  "invito",
-                  "carrello",
-                  "acquista",
-                  "opzioni di acquisto",
-                  "esaurito",
-                  "non disponibile",
-              ]
+                  found = False
 
-              for index, line in enumerate(lines):
+                  for line in lines:
+                      line_clean = clean(line)
 
-                  if any(
-                      term in line.lower()
-                      for term in search_terms
-                  ):
+                      if keyword.lower() in line_clean.lower():
+                          print(" ", repr(line_clean[:1000]))
+                          found = True
 
-                      interesting_indexes.append(
-                          index
-                      )
-
-              printed = set()
-
-              for index in interesting_indexes:
-
-                  start = max(
-                      0,
-                      index - 3
-                  )
-
-                  end = min(
-                      len(lines),
-                      index + 4
-                  )
-
-                  for j in range(
-                      start,
-                      end
-                  ):
-
-                      if j in printed:
-                          continue
-
-                      printed.add(j)
-
-                      print(
-                          f"{j}: {lines[j]}"
-                      )
+                  if not found:
+                      print("  NOT FOUND")
 
               print()
               print("=" * 80)
-              print("END DIAGNOSTIC")
+              print("9. OFFER CONTAINERS SUMMARY")
               print("=" * 80)
 
-              browser.close()
+              container_selectors = [
+                  "[id*='offer']",
+                  "[class*='offer']",
+                  "[id*='aod']",
+                  "[class*='aod']",
+              ]
 
+              total = 0
+
+              for selector in container_selectors:
+                  try:
+                      loc = offer_page.locator(selector)
+                      count = loc.count()
+
+                      print()
+                      print("SELECTOR:", selector)
+                      print("COUNT:", count)
+
+                      for i in range(min(count, 50)):
+                          try:
+                              txt = clean(loc.nth(i).inner_text())
+
+                              if txt:
+                                  total += 1
+                                  print()
+                                  print("CONTAINER", total)
+                                  print(txt[:3000])
+                          except Exception:
+                              pass
+
+                  except Exception:
+                      pass
+
+              print()
+              print("=" * 80)
+              print("10. FINAL")
+              print("=" * 80)
+              print("Offer-listing analysis completed.")
+
+              browser.close()
           PY
+
+          python amazon_offers_test.py

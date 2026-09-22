@@ -22,7 +22,7 @@ jobs:
           pip install playwright
           playwright install --with-deps chromium
 
-      - name: Test Italian delivery location
+      - name: Test Amazon delivery location
         run: |
           python - <<'PY'
           from playwright.sync_api import sync_playwright
@@ -52,7 +52,7 @@ jobs:
               page = context.new_page()
 
               print("=" * 80)
-              print("AMAZON ITALIAN DELIVERY TEST")
+              print("AMAZON DELIVERY LOCATION TEST")
               print("=" * 80)
 
               print()
@@ -64,39 +64,140 @@ jobs:
                   timeout=30000,
               )
 
-              page.wait_for_timeout(4000)
+              page.wait_for_timeout(5000)
 
               print()
-              print("INITIAL DELIVERY:")
+              print("=" * 80)
+              print("DELIVERY SELECTORS")
+              print("=" * 80)
 
-              delivery = page.locator(
-                  "#glow-ingress-block"
-              ).first
+              selectors = [
+                  "#glow-ingress-block",
+                  "#glow-ingress-line1",
+                  "#glow-ingress-line2",
+                  "#nav-global-location-popover-link",
+                  "#contextualIngressPt",
+                  "#contextualIngressPtLabel",
+              ]
 
-              if delivery.count() > 0:
+              delivery_element = None
+              delivery_selector = None
+
+              for selector in selectors:
+
+                  locator = page.locator(selector)
+
+                  count = locator.count()
+
+                  print()
                   print(
-                      delivery.inner_text().strip()
+                      f"SELECTOR {selector}: {count}"
                   )
-              else:
-                  print(
-                      "Delivery element not found"
-                  )
+
+                  if count == 0:
+                      continue
+
+                  for i in range(count):
+
+                      element = locator.nth(i)
+
+                      try:
+                          visible = element.is_visible()
+                      except Exception:
+                          visible = False
+
+                      try:
+                          text = (
+                              element.inner_text()
+                              .strip()
+                          )
+                      except Exception:
+                          text = ""
+
+                      print(
+                          f"  #{i} "
+                          f"visible={visible} "
+                          f"text={text!r}"
+                      )
+
+                      if (
+                          delivery_element is None
+                          and visible
+                      ):
+                          delivery_element = element
+                          delivery_selector = selector
 
               print()
-              print("OPENING DELIVERY POPUP...")
 
-              if delivery.count() == 0:
+              if delivery_element is None:
+
+                  print(
+                      "ERROR: NO VISIBLE DELIVERY "
+                      "ELEMENT FOUND."
+                  )
+
+                  print()
+                  print("=" * 80)
+                  print("PAGE INFORMATION")
+                  print("=" * 80)
+
+                  print()
+                  print("URL:")
+                  print(page.url)
+
+                  print()
+                  print("TITLE:")
+                  print(page.title())
+
+                  print()
+                  print("BODY DELIVERY TEXT SEARCH:")
+
+                  body_text = page.locator(
+                      "body"
+                  ).inner_text()
+
+                  for line in body_text.splitlines():
+
+                      line = line.strip()
+
+                      if (
+                          "indirizzo di consegna"
+                          in line.lower()
+                          or "stati uniti"
+                          in line.lower()
+                      ):
+                          print(line)
+
                   browser.close()
-                  raise SystemExit(
-                      "ERROR: delivery element not found"
-                  )
+                  raise SystemExit(1)
 
-              delivery.click()
+              print(
+                  "SELECTED DELIVERY ELEMENT:",
+                  delivery_selector
+              )
+
+              print()
+              print("INITIAL DELIVERY TEXT:")
+
+              print(
+                  delivery_element
+                  .inner_text()
+                  .strip()
+              )
+
+              print()
+              print("=" * 80)
+              print("OPENING DELIVERY POPUP")
+              print("=" * 80)
+
+              delivery_element.click()
 
               page.wait_for_timeout(1500)
 
               print()
-              print("CAP FIELD:")
+              print("=" * 80)
+              print("CAP FIELD")
+              print("=" * 80)
 
               cap_input = page.locator(
                   "#GLUXZipUpdateInput"
@@ -108,10 +209,13 @@ jobs:
               )
 
               if cap_input.count() == 0:
-                  browser.close()
-                  raise SystemExit(
-                      "ERROR: CAP field not found"
+
+                  print(
+                      "ERROR: CAP FIELD NOT FOUND"
                   )
+
+                  browser.close()
+                  raise SystemExit(1)
 
               print(
                   "VISIBLE:",
@@ -140,65 +244,121 @@ jobs:
               page.wait_for_timeout(500)
 
               print()
-              print("CLICKING FATTO...")
+              print("=" * 80)
+              print("CLICKING FATTO")
+              print("=" * 80)
 
               done_button = page.locator(
                   "button[name='glowDoneButton']"
               ).first
 
               print(
-                  "FATTO COUNT:",
+                  "COUNT:",
                   done_button.count()
               )
 
               if done_button.count() == 0:
-                  browser.close()
-                  raise SystemExit(
-                      "ERROR: Fatto button not found"
+
+                  print(
+                      "ERROR: FATTO BUTTON NOT FOUND"
                   )
 
+                  browser.close()
+                  raise SystemExit(1)
+
               print(
-                  "FATTO VISIBLE:",
+                  "VISIBLE:",
                   done_button.is_visible()
               )
 
               done_button.click()
 
-              page.wait_for_timeout(4000)
+              page.wait_for_timeout(5000)
 
               print()
               print("=" * 80)
               print("FINAL DELIVERY STATE")
               print("=" * 80)
 
-              final_delivery = page.locator(
-                  "#glow-ingress-block"
-              ).first
+              final_selectors = [
+                  "#glow-ingress-block",
+                  "#glow-ingress-line1",
+                  "#glow-ingress-line2",
+              ]
 
-              if final_delivery.count() > 0:
+              final_found = False
 
-                  final_text = (
-                      final_delivery
-                      .inner_text()
-                      .strip()
-                  )
+              for selector in final_selectors:
 
-                  print(final_text)
+                  locator = page.locator(selector)
 
-              else:
+                  if locator.count() == 0:
+                      continue
+
+                  for i in range(locator.count()):
+
+                      element = locator.nth(i)
+
+                      try:
+                          visible = element.is_visible()
+                      except Exception:
+                          visible = False
+
+                      if not visible:
+                          continue
+
+                      try:
+                          text = (
+                              element.inner_text()
+                              .strip()
+                          )
+                      except Exception:
+                          text = ""
+
+                      print()
+                      print(
+                          f"{selector} "
+                          f"visible={visible}"
+                      )
+                      print(text)
+
+                      final_found = True
+
+              if not final_found:
 
                   print(
-                      "Final delivery element "
-                      "not found"
+                      "No final delivery element "
+                      "found."
                   )
-
-              print()
-              print("FINAL URL:")
-              print(page.url)
 
               print()
               print("=" * 80)
-              print("PRODUCT INFORMATION")
+              print("DELIVERY TEXT FROM PAGE")
+              print("=" * 80)
+
+              body_text = page.locator(
+                  "body"
+              ).inner_text()
+
+              for line in body_text.splitlines():
+
+                  line = line.strip()
+
+                  if (
+                      "indirizzo di consegna"
+                      in line.lower()
+                      or "00100"
+                      in line
+                      or "roma"
+                      in line.lower()
+                      or "stati uniti"
+                      in line.lower()
+                  ):
+                      print(line)
+
+              print()
+              print("=" * 80)
+              print("PRODUCT")
               print("=" * 80)
 
               title = page.locator(
@@ -206,44 +366,28 @@ jobs:
               ).first
 
               if title.count() > 0:
+
                   print()
-                  print("PRODUCT:")
                   print(
                       title.inner_text().strip()
                   )
 
               print()
-              print("BUYBOX COUNT:")
-
-              buybox = page.locator(
-                  "#buybox"
-              )
+              print("ADD TO CART:",
+                    page.locator(
+                        "#add-to-cart-button"
+                    ).count())
 
               print(
-                  buybox.count()
+                  "BUY NOW:",
+                  page.locator(
+                      "#buy-now-button"
+                  ).count()
               )
 
               print()
-              print("ADD TO CART COUNT:")
-
-              add_to_cart = page.locator(
-                  "#add-to-cart-button"
-              )
-
-              print(
-                  add_to_cart.count()
-              )
-
-              print()
-              print("BUY NOW COUNT:")
-
-              buy_now = page.locator(
-                  "#buy-now-button"
-              )
-
-              print(
-                  buy_now.count()
-              )
+              print("URL:")
+              print(page.url)
 
               print()
               print("=" * 80)

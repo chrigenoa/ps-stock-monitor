@@ -1,4 +1,4 @@
-name: Amazon Page Diagnostic
+name: Amazon Postal Code Test
 
 on:
   workflow_dispatch:
@@ -22,12 +22,13 @@ jobs:
           pip install playwright
           playwright install --with-deps chromium
 
-      - name: Diagnose Amazon page
+      - name: Test Amazon Italian postal code
         run: |
           python - <<'PY'
           from playwright.sync_api import sync_playwright
 
           URL = "https://www.amazon.it/dp/B0H9HFPRRD/"
+          CAP = "00100"
 
           with sync_playwright() as p:
 
@@ -51,150 +52,458 @@ jobs:
               page = context.new_page()
 
               print("=" * 80)
-              print("AMAZON PAGE DIAGNOSTIC")
+              print("AMAZON POSTAL CODE TEST")
               print("=" * 80)
 
               print()
-              print("OPENING:")
-              print(URL)
+              print("OPENING PRODUCT PAGE...")
+
+              page.goto(
+                  URL,
+                  wait_until="domcontentloaded",
+                  timeout=30000,
+              )
+
+              print()
+              print("WAITING FOR DELIVERY ELEMENT...")
+
+              delivery = page.locator(
+                  "#glow-ingress-block"
+              ).first
 
               try:
-                  response = page.goto(
-                      URL,
-                      wait_until="domcontentloaded",
-                      timeout=30000,
+                  delivery.wait_for(
+                      state="visible",
+                      timeout=15000,
+                  )
+              except Exception:
+                  print(
+                      "ERROR: DELIVERY ELEMENT DID NOT "
+                      "BECOME VISIBLE"
                   )
 
                   print()
-                  print("=" * 80)
-                  print("RESPONSE")
-                  print("=" * 80)
+                  print("URL:")
+                  print(page.url)
 
-                  if response:
-                      print("STATUS:", response.status)
-                      print("RESPONSE URL:", response.url)
-                  else:
-                      print("NO RESPONSE OBJECT")
-
-              except Exception as e:
                   print()
-                  print("GOTO ERROR:")
-                  print(repr(e))
+                  print("TITLE:")
+                  print(page.title())
 
-              page.wait_for_timeout(5000)
+                  browser.close()
+                  raise SystemExit(1)
+
+              page.wait_for_timeout(1000)
 
               print()
               print("=" * 80)
-              print("FINAL PAGE")
+              print("INITIAL DELIVERY")
               print("=" * 80)
 
-              print("URL:")
+              print(
+                  delivery.inner_text().strip()
+              )
+
+              print()
+              print("CLICKING DELIVERY...")
+
+              delivery.click()
+
+              page.wait_for_timeout(1500)
+
+              print()
+              print("=" * 80)
+              print("CAP INPUT")
+              print("=" * 80)
+
+              cap_input = page.locator(
+                  "#GLUXZipUpdateInput"
+              ).first
+
+              print(
+                  "COUNT:",
+                  cap_input.count()
+              )
+
+              if cap_input.count() == 0:
+                  print(
+                      "ERROR: CAP INPUT NOT FOUND"
+                  )
+
+                  print()
+                  print("POPUP TEXT:")
+
+                  try:
+                      print(
+                          page.locator(
+                              "body"
+                          ).inner_text()
+                      )
+                  except Exception:
+                      pass
+
+                  browser.close()
+                  raise SystemExit(1)
+
+              print(
+                  "VISIBLE:",
+                  cap_input.is_visible()
+              )
+
+              print(
+                  "DATA-ACTION:",
+                  cap_input.get_attribute(
+                      "data-action"
+                  )
+              )
+
+              print(
+                  "ARIA:",
+                  cap_input.get_attribute(
+                      "aria-label"
+                  )
+              )
+
+              print()
+              print(
+                  "FILLING CAP:",
+                  CAP
+              )
+
+              cap_input.fill(CAP)
+
+              print(
+                  "VALUE AFTER FILL:",
+                  cap_input.input_value()
+              )
+
+              page.wait_for_timeout(500)
+
+              print()
+              print("=" * 80)
+              print("REAL CAP CONFIRM BUTTON")
+              print("=" * 80)
+
+              confirm_selectors = [
+                  "#GLUXZipInputSection input[type='submit']",
+                  "#GLUXZipUpdate input[type='submit']",
+                  "input[type='submit'][aria-labelledby='GLUXZipUpdate-announce']",
+              ]
+
+              confirm_button = None
+              confirm_selector = None
+
+              for selector in confirm_selectors:
+
+                  locator = page.locator(
+                      selector
+                  )
+
+                  print()
+                  print(
+                      "SELECTOR:",
+                      selector
+                  )
+
+                  print(
+                      "COUNT:",
+                      locator.count()
+                  )
+
+                  for i in range(
+                      locator.count()
+                  ):
+
+                      element = locator.nth(i)
+
+                      try:
+                          visible = element.is_visible()
+                      except Exception:
+                          visible = False
+
+                      print(
+                          f"  #{i} "
+                          f"visible={visible}"
+                      )
+
+                      if (
+                          confirm_button is None
+                          and visible
+                      ):
+                          confirm_button = element
+                          confirm_selector = selector
+
+              if confirm_button is None:
+
+                  print()
+                  print(
+                      "ERROR: REAL CAP CONFIRM "
+                      "BUTTON NOT FOUND"
+                  )
+
+                  browser.close()
+                  raise SystemExit(1)
+
+              print()
+              print(
+                  "SELECTED:",
+                  confirm_selector
+              )
+
+              print(
+                  "TYPE:",
+                  confirm_button.get_attribute(
+                      "type"
+                  )
+              )
+
+              print(
+                  "ARIA-LABELLED-BY:",
+                  confirm_button.get_attribute(
+                      "aria-labelledby"
+                  )
+              )
+
+              print(
+                  "DISABLED:",
+                  confirm_button.is_disabled()
+              )
+
+              print()
+              print("=" * 80)
+              print("CLICKING REAL CAP CONFIRM")
+              print("=" * 80)
+
+              confirm_button.click()
+
+              print(
+                  "CLICK SENT"
+              )
+
+              page.wait_for_timeout(3000)
+
+              print()
+              print("=" * 80)
+              print("CAP SUCCESS DIALOG")
+              print("=" * 80)
+
+              success_dialog = page.locator(
+                  "#GLUXHiddenSuccessDialog"
+              ).first
+
+              print(
+                  "COUNT:",
+                  success_dialog.count()
+              )
+
+              if success_dialog.count() > 0:
+
+                  print(
+                      "VISIBLE:",
+                      success_dialog.is_visible()
+                  )
+
+                  print(
+                      "TEXT:"
+                  )
+
+                  print(
+                      success_dialog.inner_text().strip()
+                  )
+
+              print()
+              print("=" * 80)
+              print("CONFIRMED ZIP")
+              print("=" * 80)
+
+              confirmed_zip = page.locator(
+                  "#GLUXZipConfirmationValue"
+              ).first
+
+              print(
+                  "COUNT:",
+                  confirmed_zip.count()
+              )
+
+              if confirmed_zip.count() > 0:
+
+                  print(
+                      "VISIBLE:",
+                      confirmed_zip.is_visible()
+                  )
+
+                  print(
+                      "TEXT:",
+                      repr(
+                          confirmed_zip.inner_text().strip()
+                      )
+                  )
+
+              print()
+              print("=" * 80)
+              print("ZIP ERROR")
+              print("=" * 80)
+
+              zip_error = page.locator(
+                  "#GLUXZipError"
+              ).first
+
+              if zip_error.count() > 0:
+
+                  print(
+                      "VISIBLE:",
+                      zip_error.is_visible()
+                  )
+
+                  print(
+                      "TEXT:",
+                      repr(
+                          zip_error.inner_text().strip()
+                      )
+                  )
+
+              print()
+              print("=" * 80)
+              print("SERVER ERROR")
+              print("=" * 80)
+
+              server_error = page.locator(
+                  "#GLUXZipServerError"
+              ).first
+
+              if server_error.count() > 0:
+
+                  print(
+                      "VISIBLE:",
+                      server_error.is_visible()
+                  )
+
+                  print(
+                      "TEXT:",
+                      repr(
+                          server_error.inner_text().strip()
+                      )
+                  )
+
+              print()
+              print("=" * 80)
+              print("CONTINUE")
+              print("=" * 80)
+
+              continue_button = page.locator(
+                  "#GLUXConfirmClose"
+              ).first
+
+              print(
+                  "COUNT:",
+                  continue_button.count()
+              )
+
+              if continue_button.count() > 0:
+
+                  print(
+                      "VISIBLE:",
+                      continue_button.is_visible()
+                  )
+
+                  print(
+                      "TAG:",
+                      continue_button.evaluate(
+                          "(el) => el.tagName"
+                      )
+                  )
+
+                  print(
+                      "TYPE:",
+                      continue_button.get_attribute(
+                          "type"
+                      )
+                  )
+
+              if (
+                  continue_button.count() > 0
+                  and continue_button.is_visible()
+              ):
+
+                  print()
+                  print(
+                      "CLICKING CONTINUE..."
+                  )
+
+                  continue_button.click()
+
+                  page.wait_for_timeout(5000)
+
+              else:
+
+                  print(
+                      "CONTINUE NOT CLICKED"
+                  )
+
+              print()
+              print("=" * 80)
+              print("FINAL DELIVERY")
+              print("=" * 80)
+
+              final_delivery = page.locator(
+                  "#glow-ingress-block"
+              ).first
+
+              if final_delivery.count() > 0:
+
+                  print(
+                      "VISIBLE:",
+                      final_delivery.is_visible()
+                  )
+
+                  print(
+                      "TEXT:"
+                  )
+
+                  print(
+                      final_delivery.inner_text().strip()
+                  )
+
+              print()
+              print("=" * 80)
+              print("PRODUCT")
+              print("=" * 80)
+
+              title = page.locator(
+                  "#productTitle"
+              ).first
+
+              if title.count() > 0:
+
+                  print(
+                      title.inner_text().strip()
+                  )
+
+              print()
+              print(
+                  "ADD TO CART:",
+                  page.locator(
+                      "#add-to-cart-button"
+                  ).count()
+              )
+
+              print(
+                  "BUY NOW:",
+                  page.locator(
+                      "#buy-now-button"
+                  ).count()
+              )
+
+              print()
+              print("=" * 80)
+              print("FINAL URL")
+              print("=" * 80)
+
               print(page.url)
 
               print()
-              print("TITLE:")
-              print(page.title())
-
-              print()
-              print("H1 COUNT:")
-              print(page.locator("h1").count())
-
-              print()
-              print("PRODUCT TITLE COUNT:")
-              print(page.locator("#productTitle").count())
-
-              print()
-              print("CAP DELIVERY ELEMENT:")
-              print(
-                  page.locator("#glow-ingress-block").count()
-              )
-
-              print()
-              print("ADD TO CART:")
-              print(
-                  page.locator("#add-to-cart-button").count()
-              )
-
-              print()
-              print("BUY NOW:")
-              print(
-                  page.locator("#buy-now-button").count()
-              )
-
-              print()
               print("=" * 80)
-              print("IMPORTANT PAGE TEXT")
-              print("=" * 80)
-
-              body_text = page.locator("body").inner_text()
-
-              lines = body_text.splitlines()
-
-              keywords = [
-                  "captcha",
-                  "robot",
-                  "automated",
-                  "access",
-                  "temporarily",
-                  "sign in",
-                  "accedi",
-                  "stati uniti",
-                  "italia",
-                  "indirizzo",
-                  "consegna",
-                  "disponibile",
-                  "pokemon",
-                  "B0H9HFPRRD",
-              ]
-
-              found = set()
-
-              for line in lines:
-
-                  line = line.strip()
-
-                  if not line:
-                      continue
-
-                  lower = line.lower()
-
-                  if any(
-                      keyword in lower
-                      for keyword in keywords
-                  ):
-                      if line not in found:
-                          print(line)
-                          found.add(line)
-
-              print()
-              print("=" * 80)
-              print("FIRST 80 BODY LINES")
-              print("=" * 80)
-
-              for line in lines[:80]:
-                  line = line.strip()
-
-                  if line:
-                      print(line)
-
-              print()
-              print("=" * 80)
-              print("COOKIES")
-              print("=" * 80)
-
-              for cookie in context.cookies():
-
-                  print(
-                      cookie["name"],
-                      "=",
-                      cookie["value"],
-                      "| domain=",
-                      cookie["domain"],
-                  )
-
-              print()
-              print("=" * 80)
-              print("END")
+              print("END TEST")
               print("=" * 80)
 
               browser.close()

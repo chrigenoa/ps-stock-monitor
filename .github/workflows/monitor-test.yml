@@ -52,4 +52,3 @@ jobs:
             git commit -m "Update stock state"
             git push
           fi
-```

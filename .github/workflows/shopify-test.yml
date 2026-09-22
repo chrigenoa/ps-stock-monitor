@@ -1,10 +1,10 @@
-name: Shopify Stock Test
+name: Shopify Stock Diagnostic
 
 on:
   workflow_dispatch:
 
 jobs:
-  test-shopify:
+  diagnostic:
     runs-on: ubuntu-latest
 
     steps:
@@ -22,44 +22,291 @@ jobs:
           pip install playwright
           playwright install --with-deps chromium
 
-      - name: Test Shopify adapter
+      - name: Shopify diagnostic
         run: |
           python - <<'PY'
-          from sites.shopify import check_stock
+          from playwright.sync_api import sync_playwright
 
           url = (
               "https://www.gtavi-thealbum.com/en-eu/products/"
               "grand-theft-auto-vi-the-album-limited-edition-vinyl"
           )
 
-          print("=" * 80)
-          print("SHOPIFY STOCK ADAPTER TEST")
-          print("=" * 80)
-          print()
-          print("URL:")
-          print(url)
-          print()
-          print("Running check_stock()...")
-          print()
+          with sync_playwright() as p:
 
-          result = check_stock(url)
-
-          print("=" * 80)
-          print("RESULT")
-          print("=" * 80)
-          print(result)
-          print("=" * 80)
-
-          if result != "OUT_OF_STOCK":
-              print()
-              print("TEST FAILED")
-              print(
-                  "Expected OUT_OF_STOCK but received:",
-                  result,
+              browser = p.chromium.launch(
+                  headless=True,
+                  args=[
+                      "--no-sandbox",
+                      "--disable-dev-shm-usage",
+                  ],
               )
-              raise SystemExit(1)
 
-          print()
-          print("TEST PASSED")
-          print("Shopify correctly reports OUT_OF_STOCK.")
+              context = browser.new_context(
+                  locale="en-US",
+                  timezone_id="Europe/Rome",
+                  viewport={
+                      "width": 1440,
+                      "height": 1000,
+                  },
+              )
+
+              page = context.new_page()
+
+              print("=" * 80)
+              print("1. OPEN PAGE")
+              print("=" * 80)
+
+              page.goto(
+                  url,
+                  wait_until="domcontentloaded",
+                  timeout=30000,
+              )
+
+              page.wait_for_timeout(2500)
+
+              print("URL:", page.url)
+
+              print()
+              print("=" * 80)
+              print("2. LOCALIZATION FORM")
+              print("=" * 80)
+
+              localization_form = page.locator(
+                  'form[action="/localization"]'
+              ).first
+
+              print("Form count:", localization_form.count())
+
+              if localization_form.count() == 0:
+                  print("STOP: localization form NOT FOUND")
+                  browser.close()
+                  raise SystemExit(1)
+
+              selector_button = localization_form.locator(
+                  "button.disclosure__button"
+              ).first
+
+              print(
+                  "Selector button count:",
+                  selector_button.count()
+              )
+
+              if selector_button.count() == 0:
+                  print("STOP: selector button NOT FOUND")
+                  browser.close()
+                  raise SystemExit(1)
+
+              print()
+              print("=" * 80)
+              print("3. SELECT ITALY")
+              print("=" * 80)
+
+              selector_button.click(
+                  force=True,
+                  timeout=10000,
+              )
+
+              page.wait_for_timeout(500)
+
+              italy_link = localization_form.locator(
+                  'a.disclosure__link[data-value="IT"]'
+              ).first
+
+              print(
+                  "Italy link count:",
+                  italy_link.count()
+              )
+
+              if italy_link.count() == 0:
+                  print("STOP: Italy link NOT FOUND")
+                  browser.close()
+                  raise SystemExit(1)
+
+              italy_link.click(
+                  force=True,
+                  timeout=10000,
+              )
+
+              page.wait_for_timeout(3000)
+
+              print("URL after Italy:", page.url)
+
+              print()
+              print("=" * 80)
+              print("4. COOKIES")
+              print("=" * 80)
+
+              for cookie in context.cookies():
+                  if cookie["name"] in (
+                      "localization",
+                      "cart_currency",
+                  ):
+                      print(
+                          cookie["name"],
+                          "=",
+                          cookie["value"]
+                      )
+
+              print()
+              print("=" * 80)
+              print("5. BODY / MARKET CHECK")
+              print("=" * 80)
+
+              body_text = page.locator("body").inner_text()
+
+              print(
+                  "Contains €123,99:",
+                  "€123,99" in body_text
+              )
+
+              print(
+                  "Contains 123,99:",
+                  "123,99" in body_text
+              )
+
+              print()
+              print("Relevant body lines:")
+
+              for line in body_text.splitlines():
+
+                  line = line.strip()
+
+                  lower = line.lower()
+
+                  if (
+                      "123,99" in line
+                      or "sold out" in lower
+                      or "pre-order" in lower
+                      or "ships:" in lower
+                      or "select options" in lower
+                  ):
+                      print(repr(line))
+
+              print()
+              print("=" * 80)
+              print("6. H1")
+              print("=" * 80)
+
+              h1 = page.locator("h1").first
+
+              print("H1 count:", h1.count())
+
+              if h1.count() > 0:
+                  print(
+                      "H1 text:",
+                      repr(h1.inner_text())
+                  )
+
+              print()
+              print("=" * 80)
+              print("7. PRODUCT ANCESTORS")
+              print("=" * 80)
+
+              if h1.count() > 0:
+
+                  for level in range(1, 8):
+
+                      ancestor = h1.locator(
+                          "xpath=" + "/.." * level
+                      ).first
+
+                      if ancestor.count() == 0:
+                          continue
+
+                      try:
+                          tag = ancestor.evaluate(
+                              "(el) => el.tagName"
+                          )
+
+                          classes = ancestor.get_attribute(
+                              "class"
+                          )
+
+                          text = ancestor.inner_text()
+
+                          print()
+                          print(
+                              "LEVEL:",
+                              level
+                          )
+                          print(
+                              "TAG:",
+                              tag
+                          )
+                          print(
+                              "CLASS:",
+                              classes
+                          )
+                          print(
+                              "TEXT:",
+                              repr(text[:1200])
+                          )
+
+                      except Exception as e:
+                          print(
+                              "Ancestor error:",
+                              e
+                          )
+
+              print()
+              print("=" * 80)
+              print("8. ALL BUTTONS NEAR PRODUCT")
+              print("=" * 80)
+
+              if h1.count() > 0:
+
+                  for level in range(1, 6):
+
+                      ancestor = h1.locator(
+                          "xpath=" + "/.." * level
+                      ).first
+
+                      if ancestor.count() == 0:
+                          continue
+
+                      buttons = ancestor.locator("button")
+
+                      if buttons.count() == 0:
+                          continue
+
+                      print()
+                      print(
+                          "LEVEL",
+                          level,
+                          "BUTTON COUNT:",
+                          buttons.count()
+                      )
+
+                      for i in range(
+                          min(buttons.count(), 20)
+                      ):
+
+                          button = buttons.nth(i)
+
+                          try:
+                              print(
+                                  "BUTTON",
+                                  i,
+                                  "| visible=",
+                                  button.is_visible(),
+                                  "| disabled=",
+                                  button.is_disabled(),
+                                  "| text=",
+                                  repr(
+                                      button.inner_text()
+                                  )
+                              )
+                          except Exception as e:
+                              print(
+                                  "button error:",
+                                  e
+                              )
+
+              print()
+              print("=" * 80)
+              print("DIAGNOSTIC COMPLETE")
+              print("=" * 80)
+
+              browser.close()
           PY

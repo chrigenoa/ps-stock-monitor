@@ -1,4 +1,4 @@
-name: Amazon Delivery Debug 2
+name: Amazon Delivery DOM Debug
 
 on:
   workflow_dispatch:
@@ -22,13 +22,12 @@ jobs:
           pip install playwright
           playwright install --with-deps chromium
 
-      - name: Debug Amazon delivery change
+      - name: Inspect Amazon delivery popup
         run: |
           python - <<'PY'
           from playwright.sync_api import sync_playwright
 
           URL = "https://www.amazon.it/dp/B0H9HFPRRD/"
-          CAP = "00100"
 
           with sync_playwright() as p:
 
@@ -52,7 +51,7 @@ jobs:
               page = context.new_page()
 
               print("=" * 80)
-              print("AMAZON DELIVERY DEBUG 2")
+              print("AMAZON DELIVERY DOM DEBUG")
               print("=" * 80)
 
               # ---------------------------------------------------------
@@ -79,27 +78,7 @@ jobs:
               print(page.title())
 
               # ---------------------------------------------------------
-              # 2. COOKIES BEFORE
-              # ---------------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("COOKIES BEFORE")
-              print("=" * 80)
-
-              cookies_before = context.cookies()
-
-              for cookie in cookies_before:
-                  print(
-                      cookie["name"],
-                      "=",
-                      cookie["value"],
-                      "| domain=",
-                      cookie["domain"],
-                  )
-
-              # ---------------------------------------------------------
-              # 3. DELIVERY ELEMENT
+              # 2. FIND DELIVERY ELEMENT
               # ---------------------------------------------------------
 
               print()
@@ -120,8 +99,11 @@ jobs:
 
                   locator = page.locator(selector)
 
-                  if locator.count() == 0:
-                      continue
+                  print()
+                  print(
+                      f"SELECTOR {selector}: "
+                      f"{locator.count()}"
+                  )
 
                   for i in range(locator.count()):
 
@@ -132,319 +114,668 @@ jobs:
                       except Exception:
                           visible = False
 
-                      if not visible:
-                          continue
-
                       try:
                           text = element.inner_text().strip()
                       except Exception:
                           text = ""
 
                       print(
-                          selector,
-                          "| visible=",
-                          visible,
-                          "| text=",
-                          repr(text),
+                          f"  #{i} "
+                          f"visible={visible} "
+                          f"text={text!r}"
                       )
 
-                      if delivery_element is None:
+                      if (
+                          delivery_element is None
+                          and visible
+                      ):
                           delivery_element = element
 
               if delivery_element is None:
+
                   print()
-                  print("ERROR: DELIVERY ELEMENT NOT FOUND")
+                  print(
+                      "ERROR: DELIVERY ELEMENT NOT FOUND"
+                  )
+
                   browser.close()
                   raise SystemExit(1)
 
+              # ---------------------------------------------------------
+              # 3. OPEN POPUP
+              # ---------------------------------------------------------
+
               print()
-              print("CLICKING DELIVERY ELEMENT...")
+              print("=" * 80)
+              print("OPENING DELIVERY POPUP")
+              print("=" * 80)
 
               delivery_element.click()
 
               page.wait_for_timeout(1500)
 
+              print()
+              print("POPUP OPENED")
+
               # ---------------------------------------------------------
-              # 4. POPUP BEFORE CAP
+              # 4. FIND CAP INPUT
               # ---------------------------------------------------------
 
               print()
               print("=" * 80)
-              print("POPUP BEFORE CAP")
-              print("=" * 80)
-
-              body_text = page.locator("body").inner_text()
-
-              for line in body_text.splitlines():
-
-                  line = line.strip()
-
-                  if (
-                      "indirizzo di consegna" in line.lower()
-                      or "stati uniti" in line.lower()
-                      or "cap italiano" in line.lower()
-                      or "fatto" == line.lower()
-                  ):
-                      print(line)
-
-              # ---------------------------------------------------------
-              # 5. CAP
-              # ---------------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("CAP INPUT")
+              print("CAP INPUT DETAILS")
               print("=" * 80)
 
               cap_input = page.locator(
                   "#GLUXZipUpdateInput"
               ).first
 
-              print("COUNT:", cap_input.count())
+              print()
+              print(
+                  "COUNT:",
+                  cap_input.count()
+              )
 
               if cap_input.count() == 0:
-                  print("ERROR: CAP INPUT NOT FOUND")
-                  browser.close()
-                  raise SystemExit(1)
 
-              print("VISIBLE:", cap_input.is_visible())
+                  print(
+                      "ERROR: CAP INPUT NOT FOUND"
+                  )
 
-              print(
-                  "ARIA:",
-                  cap_input.get_attribute("aria-label"),
-              )
-
-              print()
-              print("FILLING CAP:", CAP)
-
-              cap_input.fill(CAP)
-
-              print(
-                  "INPUT VALUE:",
-                  cap_input.input_value(),
-              )
-
-              page.wait_for_timeout(500)
-
-              # ---------------------------------------------------------
-              # 6. BUTTON
-              # ---------------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("FATTO BUTTON")
-              print("=" * 80)
-
-              done_button = page.locator(
-                  "button[name='glowDoneButton']"
-              ).first
-
-              print("COUNT:", done_button.count())
-
-              if done_button.count() == 0:
-                  print("ERROR: FATTO BUTTON NOT FOUND")
                   browser.close()
                   raise SystemExit(1)
 
               print(
                   "VISIBLE:",
-                  done_button.is_visible(),
+                  cap_input.is_visible()
               )
 
               print(
-                  "TEXT:",
-                  repr(done_button.inner_text()),
+                  "TAG:",
+                  cap_input.evaluate(
+                      "(el) => el.tagName"
+                  )
               )
 
-              print(
-                  "DISABLED:",
-                  done_button.is_disabled(),
-              )
-
-              # ---------------------------------------------------------
-              # 7. COOKIES IMMEDIATELY BEFORE CLICK
-              # ---------------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("COOKIES IMMEDIATELY BEFORE FATTO")
-              print("=" * 80)
-
-              cookies_before_click = context.cookies()
-
-              for cookie in cookies_before_click:
-                  print(
-                      cookie["name"],
-                      "=",
-                      cookie["value"],
-                      "| domain=",
-                      cookie["domain"],
-                  )
-
-              # ---------------------------------------------------------
-              # 8. CLICK FATTO
-              # ---------------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("CLICKING FATTO")
-              print("=" * 80)
-
-              old_url = page.url
-
-              done_button.click()
-
-              print()
-              print("CLICK SENT")
-
-              page.wait_for_timeout(1000)
-
-              print()
-              print("URL AFTER 1 SECOND:")
-              print(page.url)
-
-              print()
-              print("WAITING 5 MORE SECONDS...")
-
-              page.wait_for_timeout(5000)
-
-              print()
-              print("FINAL URL:")
-              print(page.url)
-
-              print()
-              print("URL CHANGED:")
-              print(page.url != old_url)
-
-              # ---------------------------------------------------------
-              # 9. COOKIES AFTER
-              # ---------------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("COOKIES AFTER")
-              print("=" * 80)
-
-              cookies_after = context.cookies()
-
-              for cookie in cookies_after:
-                  print(
-                      cookie["name"],
-                      "=",
-                      cookie["value"],
-                      "| domain=",
-                      cookie["domain"],
-                  )
-
-              # ---------------------------------------------------------
-              # 10. DELIVERY ELEMENT AFTER
-              # ---------------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("DELIVERY AFTER")
-              print("=" * 80)
-
-              final_selectors = [
-                  "#glow-ingress-block",
-                  "#glow-ingress-line1",
-                  "#glow-ingress-line2",
-                  "#nav-global-location-popover-link",
+              attributes = [
+                  "id",
+                  "name",
+                  "type",
+                  "value",
+                  "placeholder",
+                  "aria-label",
+                  "autocomplete",
+                  "form",
+                  "class",
+                  "data-action",
+                  "data-name",
+                  "data-testid",
               ]
 
-              for selector in final_selectors:
+              for attribute in attributes:
 
-                  locator = page.locator(selector)
+                  try:
+                      value = cap_input.get_attribute(
+                          attribute
+                      )
+                  except Exception:
+                      value = None
 
-                  if locator.count() == 0:
-                      continue
+                  print(
+                      f"{attribute}: {value!r}"
+                  )
 
-                  for i in range(locator.count()):
+              # ---------------------------------------------------------
+              # 5. PARENT ELEMENTS OF CAP
+              # ---------------------------------------------------------
 
-                      element = locator.nth(i)
+              print()
+              print("=" * 80)
+              print("CAP PARENT CHAIN")
+              print("=" * 80)
 
-                      try:
-                          visible = element.is_visible()
-                      except Exception:
-                          visible = False
+              parent_info = page.evaluate(
+                  """
+                  () => {
+                      const input =
+                          document.querySelector(
+                              "#GLUXZipUpdateInput"
+                          );
 
-                      if not visible:
-                          continue
+                      if (!input) {
+                          return [];
+                      }
 
-                      try:
-                          text = element.inner_text().strip()
-                      except Exception:
-                          text = ""
+                      const result = [];
+
+                      let el = input;
+
+                      for (let i = 0; i < 6 && el; i++) {
+
+                          const attrs = {};
+
+                          for (const attr of el.attributes) {
+                              attrs[attr.name] = attr.value;
+                          }
+
+                          result.push({
+                              level: i,
+                              tag: el.tagName,
+                              id: el.id || "",
+                              className:
+                                  typeof el.className === "string"
+                                      ? el.className
+                                      : "",
+                              attributes: attrs,
+                              text:
+                                  (el.innerText || "")
+                                  .trim()
+                                  .slice(0, 500)
+                          });
+
+                          el = el.parentElement;
+                      }
+
+                      return result;
+                  }
+                  """
+              )
+
+              for item in parent_info:
+
+                  print()
+                  print(
+                      "LEVEL:",
+                      item["level"]
+                  )
+
+                  print(
+                      "TAG:",
+                      item["tag"]
+                  )
+
+                  print(
+                      "ID:",
+                      item["id"]
+                  )
+
+                  print(
+                      "CLASS:",
+                      item["className"]
+                  )
+
+                  print(
+                      "TEXT:",
+                      repr(item["text"])
+                  )
+
+                  print(
+                      "ATTRIBUTES:"
+                  )
+
+                  for key, value in item[
+                      "attributes"
+                  ].items():
+
+                      print(
+                          f"  {key}={value!r}"
+                      )
+
+              # ---------------------------------------------------------
+              # 6. FORMS CONTAINING CAP
+              # ---------------------------------------------------------
+
+              print()
+              print("=" * 80)
+              print("FORMS")
+              print("=" * 80)
+
+              forms = page.locator("form")
+
+              print()
+              print(
+                  "TOTAL FORMS:",
+                  forms.count()
+              )
+
+              for i in range(forms.count()):
+
+                  form = forms.nth(i)
+
+                  try:
+                      text = form.inner_text().strip()
+                  except Exception:
+                      text = ""
+
+                  if (
+                      "GLUXZipUpdateInput"
+                      in (
+                          form.evaluate(
+                              """
+                              (el) =>
+                                  el.outerHTML
+                          """
+                          )
+                      )
+                  ):
 
                       print()
                       print(
-                          selector,
-                          "| visible=",
-                          visible,
+                          f"FORM #{i}"
                       )
-                      print(text)
+
+                      print(
+                          "ACTION:",
+                          form.get_attribute(
+                              "action"
+                          )
+                      )
+
+                      print(
+                          "METHOD:",
+                          form.get_attribute(
+                              "method"
+                          )
+                      )
+
+                      print(
+                          "ID:",
+                          form.get_attribute(
+                              "id"
+                          )
+                      )
+
+                      print(
+                          "NAME:",
+                          form.get_attribute(
+                              "name"
+                          )
+                      )
+
+                      print(
+                          "CLASS:",
+                          form.get_attribute(
+                              "class"
+                          )
+                      )
+
+                      print()
+                      print(
+                          "FORM TEXT:"
+                      )
+
+                      print(text[:2000])
+
+                      print()
+                      print(
+                          "FORM HTML:"
+                      )
+
+                      html = form.evaluate(
+                          "(el) => el.outerHTML"
+                      )
+
+                      print(html[:12000])
 
               # ---------------------------------------------------------
-              # 11. SEARCH DELIVERY TEXT
+              # 7. ALL BUTTONS NEAR CAP
               # ---------------------------------------------------------
 
               print()
               print("=" * 80)
-              print("DELIVERY TEXT AFTER")
+              print("BUTTONS NEAR CAP")
               print("=" * 80)
 
-              body_text = page.locator("body").inner_text()
+              buttons_near_cap = page.evaluate(
+                  """
+                  () => {
 
-              for line in body_text.splitlines():
+                      const input =
+                          document.querySelector(
+                              "#GLUXZipUpdateInput"
+                          );
 
-                  line = line.strip()
+                      if (!input) {
+                          return [];
+                      }
 
-                  if (
-                      "indirizzo di consegna" in line.lower()
-                      or "stati uniti" in line.lower()
-                      or "00100" in line
-                      or "roma" in line.lower()
-                      or "italia" == line.lower()
-                  ):
-                      print(line)
+                      const container =
+                          input.parentElement
+                              ?.parentElement
+                              ?.parentElement;
+
+                      if (!container) {
+                          return [];
+                      }
+
+                      return Array.from(
+                          container.querySelectorAll(
+                              "button, input[type=button], input[type=submit]"
+                          )
+                      ).map((el) => {
+
+                          const attrs = {};
+
+                          for (const attr of el.attributes) {
+                              attrs[attr.name] =
+                                  attr.value;
+                          }
+
+                          return {
+                              tag: el.tagName,
+                              text:
+                                  (el.innerText || "")
+                                  .trim(),
+                              value:
+                                  el.value || "",
+                              id:
+                                  el.id || "",
+                              name:
+                                  el.getAttribute(
+                                      "name"
+                                  ) || "",
+                              type:
+                                  el.getAttribute(
+                                      "type"
+                                  ) || "",
+                              disabled:
+                                  !!el.disabled,
+                              attributes: attrs
+                          };
+                      });
+                  }
+                  """
+              )
+
+              print()
+
+              for i, button in enumerate(
+                  buttons_near_cap
+              ):
+
+                  print(
+                      f"BUTTON #{i}"
+                  )
+
+                  print(
+                      "TAG:",
+                      button["tag"]
+                  )
+
+                  print(
+                      "TEXT:",
+                      repr(button["text"])
+                  )
+
+                  print(
+                      "VALUE:",
+                      repr(button["value"])
+                  )
+
+                  print(
+                      "ID:",
+                      repr(button["id"])
+                  )
+
+                  print(
+                      "NAME:",
+                      repr(button["name"])
+                  )
+
+                  print(
+                      "TYPE:",
+                      repr(button["type"])
+                  )
+
+                  print(
+                      "DISABLED:",
+                      button["disabled"]
+                  )
+
+                  print(
+                      "ATTRIBUTES:"
+                  )
+
+                  for key, value in button[
+                      "attributes"
+                  ].items():
+
+                      print(
+                          f"  {key}={value!r}"
+                      )
+
+                  print()
 
               # ---------------------------------------------------------
-              # 12. PRODUCT
+              # 8. INPUTS NEAR CAP
               # ---------------------------------------------------------
 
               print()
               print("=" * 80)
-              print("PRODUCT")
+              print("INPUTS NEAR CAP")
               print("=" * 80)
 
-              title = page.locator(
-                  "#productTitle"
-              ).first
+              inputs_near_cap = page.evaluate(
+                  """
+                  () => {
 
-              if title.count() > 0:
+                      const input =
+                          document.querySelector(
+                              "#GLUXZipUpdateInput"
+                          );
+
+                      if (!input) {
+                          return [];
+                      }
+
+                      const container =
+                          input.parentElement
+                              ?.parentElement
+                              ?.parentElement;
+
+                      if (!container) {
+                          return [];
+                      }
+
+                      return Array.from(
+                          container.querySelectorAll(
+                              "input, select"
+                          )
+                      ).map((el) => {
+
+                          const attrs = {};
+
+                          for (const attr of el.attributes) {
+                              attrs[attr.name] =
+                                  attr.value;
+                          }
+
+                          return {
+                              tag: el.tagName,
+                              id:
+                                  el.id || "",
+                              name:
+                                  el.getAttribute(
+                                      "name"
+                                  ) || "",
+                              type:
+                                  el.getAttribute(
+                                      "type"
+                                  ) || "",
+                              value:
+                                  el.value || "",
+                              attributes: attrs
+                          };
+                      });
+                  }
+                  """
+              )
+
+              for i, item in enumerate(
+                  inputs_near_cap
+              ):
+
                   print()
                   print(
-                      title.inner_text().strip()
+                      f"INPUT/SELECT #{i}"
+                  )
+
+                  print(
+                      "TAG:",
+                      item["tag"]
+                  )
+
+                  print(
+                      "ID:",
+                      repr(item["id"])
+                  )
+
+                  print(
+                      "NAME:",
+                      repr(item["name"])
+                  )
+
+                  print(
+                      "TYPE:",
+                      repr(item["type"])
+                  )
+
+                  print(
+                      "VALUE:",
+                      repr(item["value"])
+                  )
+
+                  print(
+                      "ATTRIBUTES:"
+                  )
+
+                  for key, value in item[
+                      "attributes"
+                  ].items():
+
+                      print(
+                          f"  {key}={value!r}"
+                      )
+
+              # ---------------------------------------------------------
+              # 9. ELEMENTS WITH GLUX IN ID/NAME
+              # ---------------------------------------------------------
+
+              print()
+              print("=" * 80)
+              print("GLUX ELEMENTS")
+              print("=" * 80)
+
+              glux_elements = page.locator(
+                  "[id*='GLUX'], [name*='GLUX']"
+              )
+
+              print()
+              print(
+                  "COUNT:",
+                  glux_elements.count()
+              )
+
+              for i in range(
+                  min(glux_elements.count(), 100)
+              ):
+
+                  element = glux_elements.nth(i)
+
+                  try:
+                      tag = element.evaluate(
+                          "(el) => el.tagName"
+                      )
+                  except Exception:
+                      tag = ""
+
+                  try:
+                      element_id = (
+                          element.get_attribute(
+                              "id"
+                          )
+                          or ""
+                      )
+                  except Exception:
+                      element_id = ""
+
+                  try:
+                      name = (
+                          element.get_attribute(
+                              "name"
+                          )
+                          or ""
+                      )
+                  except Exception:
+                      name = ""
+
+                  try:
+                      text = (
+                          element.inner_text()
+                          .strip()
+                      )
+                  except Exception:
+                      text = ""
+
+                  print()
+                  print(
+                      f"#{i} "
+                      f"TAG={tag} "
+                      f"ID={element_id!r} "
+                      f"NAME={name!r}"
+                  )
+
+                  if text:
+                      print(
+                          "TEXT:",
+                          repr(text[:500])
+                      )
+
+              # ---------------------------------------------------------
+              # 10. POPUP HTML
+              # ---------------------------------------------------------
+
+              print()
+              print("=" * 80)
+              print("POPUP HTML SEARCH")
+              print("=" * 80)
+
+              html = page.locator(
+                  "body"
+              ).evaluate(
+                  "(el) => el.innerHTML"
+              )
+
+              marker = "GLUXZipUpdateInput"
+
+              position = html.find(marker)
+
+              if position >= 0:
+
+                  start = max(
+                      0,
+                      position - 8000
+                  )
+
+                  end = min(
+                      len(html),
+                      position + 12000
+                  )
+
+                  print(
+                      html[start:end]
+                  )
+
+              else:
+
+                  print(
+                      "GLUXZipUpdateInput "
+                      "NOT FOUND IN BODY HTML"
                   )
 
               print()
-              print(
-                  "ADD TO CART:",
-                  page.locator(
-                      "#add-to-cart-button"
-                  ).count(),
-              )
-
-              print(
-                  "BUY NOW:",
-                  page.locator(
-                      "#buy-now-button"
-                  ).count(),
-              )
-
-              print()
               print("=" * 80)
-              print("END DEBUG 2")
+              print("END DOM DEBUG")
               print("=" * 80)
 
               browser.close()

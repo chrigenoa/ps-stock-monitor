@@ -1,4 +1,4 @@
-name: Amazon Delivery Test
+name: Amazon Delivery Debug 2
 
 on:
   workflow_dispatch:
@@ -22,7 +22,7 @@ jobs:
           pip install playwright
           playwright install --with-deps chromium
 
-      - name: Test Amazon delivery location
+      - name: Debug Amazon delivery change
         run: |
           python - <<'PY'
           from playwright.sync_api import sync_playwright
@@ -52,8 +52,12 @@ jobs:
               page = context.new_page()
 
               print("=" * 80)
-              print("AMAZON DELIVERY LOCATION TEST")
+              print("AMAZON DELIVERY DEBUG 2")
               print("=" * 80)
+
+              # ---------------------------------------------------------
+              # 1. OPEN PRODUCT
+              # ---------------------------------------------------------
 
               print()
               print("OPENING PRODUCT PAGE...")
@@ -67,8 +71,40 @@ jobs:
               page.wait_for_timeout(5000)
 
               print()
+              print("URL:")
+              print(page.url)
+
+              print()
+              print("TITLE:")
+              print(page.title())
+
+              # ---------------------------------------------------------
+              # 2. COOKIES BEFORE
+              # ---------------------------------------------------------
+
+              print()
               print("=" * 80)
-              print("DELIVERY SELECTORS")
+              print("COOKIES BEFORE")
+              print("=" * 80)
+
+              cookies_before = context.cookies()
+
+              for cookie in cookies_before:
+                  print(
+                      cookie["name"],
+                      "=",
+                      cookie["value"],
+                      "| domain=",
+                      cookie["domain"],
+                  )
+
+              # ---------------------------------------------------------
+              # 3. DELIVERY ELEMENT
+              # ---------------------------------------------------------
+
+              print()
+              print("=" * 80)
+              print("DELIVERY ELEMENT")
               print("=" * 80)
 
               selectors = [
@@ -76,28 +112,18 @@ jobs:
                   "#glow-ingress-line1",
                   "#glow-ingress-line2",
                   "#nav-global-location-popover-link",
-                  "#contextualIngressPt",
-                  "#contextualIngressPtLabel",
               ]
 
               delivery_element = None
-              delivery_selector = None
 
               for selector in selectors:
 
                   locator = page.locator(selector)
 
-                  count = locator.count()
-
-                  print()
-                  print(
-                      f"SELECTOR {selector}: {count}"
-                  )
-
-                  if count == 0:
+                  if locator.count() == 0:
                       continue
 
-                  for i in range(count):
+                  for i in range(locator.count()):
 
                       element = locator.nth(i)
 
@@ -106,187 +132,225 @@ jobs:
                       except Exception:
                           visible = False
 
+                      if not visible:
+                          continue
+
                       try:
-                          text = (
-                              element.inner_text()
-                              .strip()
-                          )
+                          text = element.inner_text().strip()
                       except Exception:
                           text = ""
 
                       print(
-                          f"  #{i} "
-                          f"visible={visible} "
-                          f"text={text!r}"
+                          selector,
+                          "| visible=",
+                          visible,
+                          "| text=",
+                          repr(text),
                       )
 
-                      if (
-                          delivery_element is None
-                          and visible
-                      ):
+                      if delivery_element is None:
                           delivery_element = element
-                          delivery_selector = selector
-
-              print()
 
               if delivery_element is None:
-
-                  print(
-                      "ERROR: NO VISIBLE DELIVERY "
-                      "ELEMENT FOUND."
-                  )
-
                   print()
-                  print("=" * 80)
-                  print("PAGE INFORMATION")
-                  print("=" * 80)
-
-                  print()
-                  print("URL:")
-                  print(page.url)
-
-                  print()
-                  print("TITLE:")
-                  print(page.title())
-
-                  print()
-                  print("BODY DELIVERY TEXT SEARCH:")
-
-                  body_text = page.locator(
-                      "body"
-                  ).inner_text()
-
-                  for line in body_text.splitlines():
-
-                      line = line.strip()
-
-                      if (
-                          "indirizzo di consegna"
-                          in line.lower()
-                          or "stati uniti"
-                          in line.lower()
-                      ):
-                          print(line)
-
+                  print("ERROR: DELIVERY ELEMENT NOT FOUND")
                   browser.close()
                   raise SystemExit(1)
 
-              print(
-                  "SELECTED DELIVERY ELEMENT:",
-                  delivery_selector
-              )
-
               print()
-              print("INITIAL DELIVERY TEXT:")
-
-              print(
-                  delivery_element
-                  .inner_text()
-                  .strip()
-              )
-
-              print()
-              print("=" * 80)
-              print("OPENING DELIVERY POPUP")
-              print("=" * 80)
+              print("CLICKING DELIVERY ELEMENT...")
 
               delivery_element.click()
 
               page.wait_for_timeout(1500)
 
+              # ---------------------------------------------------------
+              # 4. POPUP BEFORE CAP
+              # ---------------------------------------------------------
+
               print()
               print("=" * 80)
-              print("CAP FIELD")
+              print("POPUP BEFORE CAP")
+              print("=" * 80)
+
+              body_text = page.locator("body").inner_text()
+
+              for line in body_text.splitlines():
+
+                  line = line.strip()
+
+                  if (
+                      "indirizzo di consegna" in line.lower()
+                      or "stati uniti" in line.lower()
+                      or "cap italiano" in line.lower()
+                      or "fatto" == line.lower()
+                  ):
+                      print(line)
+
+              # ---------------------------------------------------------
+              # 5. CAP
+              # ---------------------------------------------------------
+
+              print()
+              print("=" * 80)
+              print("CAP INPUT")
               print("=" * 80)
 
               cap_input = page.locator(
                   "#GLUXZipUpdateInput"
               ).first
 
-              print(
-                  "COUNT:",
-                  cap_input.count()
-              )
+              print("COUNT:", cap_input.count())
 
               if cap_input.count() == 0:
-
-                  print(
-                      "ERROR: CAP FIELD NOT FOUND"
-                  )
-
+                  print("ERROR: CAP INPUT NOT FOUND")
                   browser.close()
                   raise SystemExit(1)
 
-              print(
-                  "VISIBLE:",
-                  cap_input.is_visible()
-              )
+              print("VISIBLE:", cap_input.is_visible())
 
               print(
                   "ARIA:",
-                  cap_input.get_attribute(
-                      "aria-label"
-                  )
+                  cap_input.get_attribute("aria-label"),
               )
 
               print()
-              print(
-                  f"ENTERING CAP: {CAP}"
-              )
+              print("FILLING CAP:", CAP)
 
               cap_input.fill(CAP)
 
               print(
-                  "CAP VALUE:",
-                  cap_input.input_value()
+                  "INPUT VALUE:",
+                  cap_input.input_value(),
               )
 
               page.wait_for_timeout(500)
 
+              # ---------------------------------------------------------
+              # 6. BUTTON
+              # ---------------------------------------------------------
+
               print()
               print("=" * 80)
-              print("CLICKING FATTO")
+              print("FATTO BUTTON")
               print("=" * 80)
 
               done_button = page.locator(
                   "button[name='glowDoneButton']"
               ).first
 
-              print(
-                  "COUNT:",
-                  done_button.count()
-              )
+              print("COUNT:", done_button.count())
 
               if done_button.count() == 0:
-
-                  print(
-                      "ERROR: FATTO BUTTON NOT FOUND"
-                  )
-
+                  print("ERROR: FATTO BUTTON NOT FOUND")
                   browser.close()
                   raise SystemExit(1)
 
               print(
                   "VISIBLE:",
-                  done_button.is_visible()
+                  done_button.is_visible(),
               )
 
+              print(
+                  "TEXT:",
+                  repr(done_button.inner_text()),
+              )
+
+              print(
+                  "DISABLED:",
+                  done_button.is_disabled(),
+              )
+
+              # ---------------------------------------------------------
+              # 7. COOKIES IMMEDIATELY BEFORE CLICK
+              # ---------------------------------------------------------
+
+              print()
+              print("=" * 80)
+              print("COOKIES IMMEDIATELY BEFORE FATTO")
+              print("=" * 80)
+
+              cookies_before_click = context.cookies()
+
+              for cookie in cookies_before_click:
+                  print(
+                      cookie["name"],
+                      "=",
+                      cookie["value"],
+                      "| domain=",
+                      cookie["domain"],
+                  )
+
+              # ---------------------------------------------------------
+              # 8. CLICK FATTO
+              # ---------------------------------------------------------
+
+              print()
+              print("=" * 80)
+              print("CLICKING FATTO")
+              print("=" * 80)
+
+              old_url = page.url
+
               done_button.click()
+
+              print()
+              print("CLICK SENT")
+
+              page.wait_for_timeout(1000)
+
+              print()
+              print("URL AFTER 1 SECOND:")
+              print(page.url)
+
+              print()
+              print("WAITING 5 MORE SECONDS...")
 
               page.wait_for_timeout(5000)
 
               print()
+              print("FINAL URL:")
+              print(page.url)
+
+              print()
+              print("URL CHANGED:")
+              print(page.url != old_url)
+
+              # ---------------------------------------------------------
+              # 9. COOKIES AFTER
+              # ---------------------------------------------------------
+
+              print()
               print("=" * 80)
-              print("FINAL DELIVERY STATE")
+              print("COOKIES AFTER")
+              print("=" * 80)
+
+              cookies_after = context.cookies()
+
+              for cookie in cookies_after:
+                  print(
+                      cookie["name"],
+                      "=",
+                      cookie["value"],
+                      "| domain=",
+                      cookie["domain"],
+                  )
+
+              # ---------------------------------------------------------
+              # 10. DELIVERY ELEMENT AFTER
+              # ---------------------------------------------------------
+
+              print()
+              print("=" * 80)
+              print("DELIVERY AFTER")
               print("=" * 80)
 
               final_selectors = [
                   "#glow-ingress-block",
                   "#glow-ingress-line1",
                   "#glow-ingress-line2",
+                  "#nav-global-location-popover-link",
               ]
-
-              final_found = False
 
               for selector in final_selectors:
 
@@ -308,53 +372,45 @@ jobs:
                           continue
 
                       try:
-                          text = (
-                              element.inner_text()
-                              .strip()
-                          )
+                          text = element.inner_text().strip()
                       except Exception:
                           text = ""
 
                       print()
                       print(
-                          f"{selector} "
-                          f"visible={visible}"
+                          selector,
+                          "| visible=",
+                          visible,
                       )
                       print(text)
 
-                      final_found = True
-
-              if not final_found:
-
-                  print(
-                      "No final delivery element "
-                      "found."
-                  )
+              # ---------------------------------------------------------
+              # 11. SEARCH DELIVERY TEXT
+              # ---------------------------------------------------------
 
               print()
               print("=" * 80)
-              print("DELIVERY TEXT FROM PAGE")
+              print("DELIVERY TEXT AFTER")
               print("=" * 80)
 
-              body_text = page.locator(
-                  "body"
-              ).inner_text()
+              body_text = page.locator("body").inner_text()
 
               for line in body_text.splitlines():
 
                   line = line.strip()
 
                   if (
-                      "indirizzo di consegna"
-                      in line.lower()
-                      or "00100"
-                      in line
-                      or "roma"
-                      in line.lower()
-                      or "stati uniti"
-                      in line.lower()
+                      "indirizzo di consegna" in line.lower()
+                      or "stati uniti" in line.lower()
+                      or "00100" in line
+                      or "roma" in line.lower()
+                      or "italia" == line.lower()
                   ):
                       print(line)
+
+              # ---------------------------------------------------------
+              # 12. PRODUCT
+              # ---------------------------------------------------------
 
               print()
               print("=" * 80)
@@ -366,32 +422,29 @@ jobs:
               ).first
 
               if title.count() > 0:
-
                   print()
                   print(
                       title.inner_text().strip()
                   )
 
               print()
-              print("ADD TO CART:",
-                    page.locator(
-                        "#add-to-cart-button"
-                    ).count())
+              print(
+                  "ADD TO CART:",
+                  page.locator(
+                      "#add-to-cart-button"
+                  ).count(),
+              )
 
               print(
                   "BUY NOW:",
                   page.locator(
                       "#buy-now-button"
-                  ).count()
+                  ).count(),
               )
 
               print()
-              print("URL:")
-              print(page.url)
-
-              print()
               print("=" * 80)
-              print("END TEST")
+              print("END DEBUG 2")
               print("=" * 80)
 
               browser.close()

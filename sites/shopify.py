@@ -1,12 +1,6 @@
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 
-PRODUCT_URL = (
-    "https://www.gtavi-thealbum.com/en-eu/products/"
-    "grand-theft-auto-vi-the-album-limited-edition-vinyl"
-)
-
-
 def check_stock(url: str) -> str:
     """
     Controlla lo stato stock di un prodotto Shopify nel mercato italiano.
@@ -36,19 +30,13 @@ def check_stock(url: str) -> str:
                     "width": 1440,
                     "height": 1000,
                 },
-                user_agent=(
-                    "Mozilla/5.0 (X11; Linux x86_64) "
-                    "AppleWebKit/537.36 "
-                    "(KHTML, like Gecko) "
-                    "Chrome/131.0.0.0 Safari/537.36"
-                ),
             )
 
             page = context.new_page()
 
-            # ---------------------------------------------------------
+            # ==========================================================
             # 1. APERTURA PAGINA
-            # ---------------------------------------------------------
+            # ==========================================================
 
             page.goto(
                 url,
@@ -58,9 +46,13 @@ def check_stock(url: str) -> str:
 
             page.wait_for_timeout(2500)
 
-            # ---------------------------------------------------------
+            # ==========================================================
             # 2. SELEZIONE MERCATO ITALIANO
-            # ---------------------------------------------------------
+            #
+            # Shopify usa un input hidden country_code.
+            # Non possiamo usare fill() perché l'input non è visibile.
+            # Impostiamo quindi IT via JavaScript e inviamo il form.
+            # ==========================================================
 
             localization_form = page.locator(
                 'form[action="/localization"]'
@@ -70,77 +62,71 @@ def check_stock(url: str) -> str:
                 browser.close()
                 return "UNKNOWN"
 
-            selector_button = localization_form.locator(
-                "button.disclosure__button"
+            country_input = localization_form.locator(
+                'input[name="country_code"]'
             ).first
 
-            if selector_button.count() == 0:
+            if country_input.count() == 0:
                 browser.close()
                 return "UNKNOWN"
 
             try:
-                selector_button.click(
-                    force=True,
-                    timeout=10000,
+                page.evaluate(
+                    """
+                    () => {
+                        const input =
+                            document.querySelector(
+                                'form[action="/localization"] input[name="country_code"]'
+                            );
+
+                        if (!input) {
+                            throw new Error(
+                                "country_code input not found"
+                            );
+                        }
+
+                        input.value = "IT";
+
+                        const form = input.closest("form");
+
+                        if (!form) {
+                            throw new Error(
+                                "localization form not found"
+                            );
+                        }
+
+                        form.submit();
+                    }
+                    """
                 )
+
             except Exception:
                 browser.close()
                 return "UNKNOWN"
 
-            page.wait_for_timeout(500)
+            page.wait_for_timeout(4000)
 
-            italy_link = localization_form.locator(
-                'a.disclosure__link[data-value="IT"]'
-            ).first
+            # ==========================================================
+            # 3. VERIFICA CHE SHOPIFY ABBIA APPLICATO L'ITALIA
+            # ==========================================================
 
-            if italy_link.count() == 0:
-                browser.close()
-                return "UNKNOWN"
+            cookies = context.cookies()
 
-            # Il link può risultare hidden secondo Playwright,
-            # ma il JS ufficiale del sito utilizza comunque proprio
-            # questo elemento per impostare country_code=IT.
-            #
-            # force=True permette di attivare esattamente il
-            # meccanismo previsto dal sito.
-
-            try:
-                italy_link.click(
-                    force=True,
-                    timeout=10000,
-                )
-            except Exception:
-                browser.close()
-                return "UNKNOWN"
-
-            page.wait_for_timeout(2500)
-
-            # ---------------------------------------------------------
-            # 3. VERIFICA CHE SIAMO DAVVERO SUL MERCATO ITALIANO
-            # ---------------------------------------------------------
-
-            body_text = page.locator("body").inner_text()
-
-            body_lower = body_text.lower()
-
-            italian_market = (
-                "€123,99" in body_text
-                or "123,99" in body_text
+            italian_localization = any(
+                cookie["name"] == "localization"
+                and cookie["value"] == "IT"
+                for cookie in cookies
             )
 
-            # Se il sito non ha applicato il mercato italiano,
-            # non prendiamo decisioni sullo stock.
-            if not italian_market:
+            if not italian_localization:
                 browser.close()
                 return "UNKNOWN"
 
-            # ---------------------------------------------------------
+            # ==========================================================
             # 4. IDENTIFICAZIONE DEL PRODOTTO
-            # ---------------------------------------------------------
+            # ==========================================================
 
-            product_title = page.locator(
-                "h1"
-            ).first
+            product_title = page.locator("h1").first
 
             if product_title.count() == 0:
                 browser.close()
@@ -159,200 +145,111 @@ def check_stock(url: str) -> str:
                 browser.close()
                 return "UNKNOWN"
 
-            # ---------------------------------------------------------
-            # 5. INDIVIDUAZIONE DELL'AREA PRODOTTO
-            # ---------------------------------------------------------
-
+            # ==========================================================
+            # 5. CONTENITORE REALE DEL PRODOTTO
             #
-            # Shopify normalmente struttura la pagina in modo che
-            # l'H1 appartenga al blocco principale del prodotto.
+            # Dal test diagnostico sappiamo che il contenitore corretto
+            # è:
             #
-            # Partiamo dall'H1 e risaliamo il DOM cercando un
-            # contenitore che contenga anche l'area acquisto.
-            #
+            # section.product__info-container
+            # ==========================================================
 
-            product_container = None
+            product_container = page.locator(
+                "section.product__info-container"
+            ).first
 
-            candidates = [
-                "xpath=ancestor::*[contains(@class,'product')]",
-                "xpath=ancestor::*[contains(@class,'product__info')]",
-                "xpath=ancestor::*[contains(@class,'product-form')]",
-            ]
+            if product_container.count() == 0:
+                browser.close()
+                return "UNKNOWN"
 
-            for selector in candidates:
-
-                candidate = product_title.locator(
-                    selector
-                ).first
-
-                if candidate.count() == 0:
-                    continue
-
-                try:
-                    text = candidate.inner_text().strip()
-
-                    if len(text) > 0:
-                        product_container = candidate
-                        break
-
-                except Exception:
-                    continue
-
-            # Se non riusciamo a individuare un contenitore
-            # affidabile, analizziamo comunque il blocco vicino
-            # all'H1, senza usare l'intera pagina.
-            if product_container is None:
-
-                product_container = product_title.locator(
-                    "xpath=.."
-                ).first
-
-                if product_container.count() == 0:
-                    browser.close()
-                    return "UNKNOWN"
-
-            # ---------------------------------------------------------
-            # 6. CONTROLLO "SOLD OUT"
-            # ---------------------------------------------------------
+            # ==========================================================
+            # 6. CONTROLLO TESTUALE SOLD OUT
+            # ==========================================================
 
             container_text = (
                 product_container
                 .inner_text()
                 .strip()
+                .lower()
             )
 
-            container_lower = container_text.lower()
+            if "sold out" in container_text:
+                browser.close()
+                return "OUT_OF_STOCK"
 
-            sold_out_markers = [
-                "sold out",
-                "sold-out",
-                "soldout",
-            ]
+            # ==========================================================
+            # 7. CONTROLLO PULSANTI DEL PRODOTTO
+            # ==========================================================
 
-            for marker in sold_out_markers:
-
-                if marker in container_lower:
-                    browser.close()
-                    return "OUT_OF_STOCK"
-
-            # ---------------------------------------------------------
-            # 7. CONTROLLO PULSANTI DI ACQUISTO
-            # ---------------------------------------------------------
-
-            purchase_buttons = product_container.locator(
+            buttons = product_container.locator(
                 "button"
             )
 
             available_button_found = False
+            sold_out_button_found = False
 
-            for i in range(purchase_buttons.count()):
+            purchase_markers = [
+                "add to cart",
+                "pre-order now",
+                "pre order now",
+                "aggiungi al carrello",
+                "acquista",
+                "preordina",
+            ]
 
-                button = purchase_buttons.nth(i)
+            for i in range(buttons.count()):
+
+                button = buttons.nth(i)
 
                 try:
-                    if not button.is_visible():
-                        continue
+                    visible = button.is_visible()
                 except Exception:
                     continue
 
+                if not visible:
+                    continue
+
                 try:
-                    button_text = (
+                    text = (
                         button.inner_text()
                         .strip()
                         .lower()
                     )
                 except Exception:
-                    button_text = ""
+                    text = ""
 
                 try:
                     disabled = button.is_disabled()
                 except Exception:
                     disabled = False
 
-                if disabled:
+                # Sold Out esplicito
+                if "sold out" in text:
+                    sold_out_button_found = True
                     continue
 
-                purchase_markers = [
-                    "add to cart",
-                    "pre-order now",
-                    "pre order now",
-                    "aggiungi al carrello",
-                    "acquista",
-                    "preordina",
-                ]
-
-                if any(
-                    marker in button_text
-                    for marker in purchase_markers
+                # Pulsante di acquisto attivo
+                if (
+                    not disabled
+                    and any(
+                        marker in text
+                        for marker in purchase_markers
+                    )
                 ):
                     available_button_found = True
                     break
+
+            # ==========================================================
+            # 8. RISULTATO FINALE
+            # ==========================================================
 
             if available_button_found:
                 browser.close()
                 return "AVAILABLE"
 
-            # ---------------------------------------------------------
-            # 8. CONTROLLO FORM DI ACQUISTO
-            # ---------------------------------------------------------
-
-            forms = product_container.locator(
-                'form[action*="/cart/add"]'
-            )
-
-            if forms.count() > 0:
-
-                for i in range(forms.count()):
-
-                    form = forms.nth(i)
-
-                    try:
-                        if not form.is_visible():
-                            continue
-                    except Exception:
-                        continue
-
-                    try:
-                        form_text = (
-                            form.inner_text()
-                            .strip()
-                            .lower()
-                        )
-                    except Exception:
-                        form_text = ""
-
-                    if any(
-                        marker in form_text
-                        for marker in (
-                            "add to cart",
-                            "pre-order now",
-                            "pre order now",
-                            "aggiungi al carrello",
-                            "acquista",
-                            "preordina",
-                        )
-                    ):
-                        browser.close()
-                        return "AVAILABLE"
-
-            # ---------------------------------------------------------
-            # 9. CONTROLLO ESPLICITO SOLD OUT NEL BLOCCO PRODOTTO
-            # ---------------------------------------------------------
-
-            if any(
-                marker in container_lower
-                for marker in (
-                    "sold out",
-                    "sold-out",
-                    "soldout",
-                )
-            ):
+            if sold_out_button_found:
                 browser.close()
                 return "OUT_OF_STOCK"
-
-            # ---------------------------------------------------------
-            # 10. NESSUNA EVIDENZA SUFFICIENTE
-            # ---------------------------------------------------------
 
             browser.close()
             return "UNKNOWN"

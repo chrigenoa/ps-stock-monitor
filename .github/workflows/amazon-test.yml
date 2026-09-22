@@ -1,4 +1,4 @@
-name: Amazon Postal Code Test
+name: Amazon Page Diagnostic
 
 on:
   workflow_dispatch:
@@ -22,13 +22,12 @@ jobs:
           pip install playwright
           playwright install --with-deps chromium
 
-      - name: Test Amazon Italian postal code
+      - name: Diagnose Amazon page
         run: |
           python - <<'PY'
           from playwright.sync_api import sync_playwright
 
           URL = "https://www.amazon.it/dp/B0H9HFPRRD/"
-          CAP = "00100"
 
           with sync_playwright() as p:
 
@@ -52,25 +51,43 @@ jobs:
               page = context.new_page()
 
               print("=" * 80)
-              print("AMAZON POSTAL CODE TEST")
+              print("AMAZON PAGE DIAGNOSTIC")
               print("=" * 80)
 
-              # ---------------------------------------------------------
-              # 1. OPEN PRODUCT
-              # ---------------------------------------------------------
-
               print()
-              print("OPENING PRODUCT PAGE...")
+              print("OPENING:")
+              print(URL)
 
-              page.goto(
-                  URL,
-                  wait_until="domcontentloaded",
-                  timeout=30000,
-              )
+              try:
+                  response = page.goto(
+                      URL,
+                      wait_until="domcontentloaded",
+                      timeout=30000,
+                  )
+
+                  print()
+                  print("=" * 80)
+                  print("RESPONSE")
+                  print("=" * 80)
+
+                  if response:
+                      print("STATUS:", response.status)
+                      print("RESPONSE URL:", response.url)
+                  else:
+                      print("NO RESPONSE OBJECT")
+
+              except Exception as e:
+                  print()
+                  print("GOTO ERROR:")
+                  print(repr(e))
 
               page.wait_for_timeout(5000)
 
               print()
+              print("=" * 80)
+              print("FINAL PAGE")
+              print("=" * 80)
+
               print("URL:")
               print(page.url)
 
@@ -78,479 +95,91 @@ jobs:
               print("TITLE:")
               print(page.title())
 
-              # ---------------------------------------------------------
-              # 2. OPEN DELIVERY POPUP
-              # ---------------------------------------------------------
+              print()
+              print("H1 COUNT:")
+              print(page.locator("h1").count())
 
               print()
-              print("=" * 80)
-              print("OPENING DELIVERY POPUP")
-              print("=" * 80)
-
-              delivery = page.locator(
-                  "#glow-ingress-block"
-              ).first
-
-              if delivery.count() == 0:
-                  print(
-                      "ERROR: #glow-ingress-block NOT FOUND"
-                  )
-                  browser.close()
-                  raise SystemExit(1)
-
-              if not delivery.is_visible():
-                  print(
-                      "ERROR: #glow-ingress-block NOT VISIBLE"
-                  )
-                  browser.close()
-                  raise SystemExit(1)
-
-              print(
-                  "INITIAL DELIVERY:"
-              )
-
-              print(
-                  delivery.inner_text().strip()
-              )
-
-              delivery.click()
-
-              page.wait_for_timeout(1500)
-
-              # ---------------------------------------------------------
-              # 3. CAP INPUT
-              # ---------------------------------------------------------
+              print("PRODUCT TITLE COUNT:")
+              print(page.locator("#productTitle").count())
 
               print()
-              print("=" * 80)
-              print("CAP INPUT")
-              print("=" * 80)
-
-              cap_input = page.locator(
-                  "#GLUXZipUpdateInput"
-              ).first
-
+              print("CAP DELIVERY ELEMENT:")
               print(
-                  "COUNT:",
-                  cap_input.count()
-              )
-
-              if cap_input.count() == 0:
-                  print(
-                      "ERROR: CAP INPUT NOT FOUND"
-                  )
-                  browser.close()
-                  raise SystemExit(1)
-
-              print(
-                  "VISIBLE:",
-                  cap_input.is_visible()
-              )
-
-              print(
-                  "DATA-ACTION:",
-                  cap_input.get_attribute(
-                      "data-action"
-                  )
-              )
-
-              print(
-                  "ARIA:",
-                  cap_input.get_attribute(
-                      "aria-label"
-                  )
+                  page.locator("#glow-ingress-block").count()
               )
 
               print()
+              print("ADD TO CART:")
               print(
-                  "FILLING CAP:",
-                  CAP
+                  page.locator("#add-to-cart-button").count()
               )
 
-              cap_input.fill(CAP)
-
+              print()
+              print("BUY NOW:")
               print(
-                  "VALUE AFTER FILL:",
-                  cap_input.input_value()
+                  page.locator("#buy-now-button").count()
               )
-
-              page.wait_for_timeout(500)
-
-              # ---------------------------------------------------------
-              # 4. FIND REAL CAP CONFIRM BUTTON
-              # ---------------------------------------------------------
 
               print()
               print("=" * 80)
-              print("CAP CONFIRM BUTTON")
+              print("IMPORTANT PAGE TEXT")
               print("=" * 80)
 
-              confirm_selectors = [
-                  "#GLUXZipInputSection input[type='submit']",
-                  "#GLUXZipUpdate input[type='submit']",
-                  "input[type='submit'][aria-labelledby='GLUXZipUpdate-announce']",
+              body_text = page.locator("body").inner_text()
+
+              lines = body_text.splitlines()
+
+              keywords = [
+                  "captcha",
+                  "robot",
+                  "automated",
+                  "access",
+                  "temporarily",
+                  "sign in",
+                  "accedi",
+                  "stati uniti",
+                  "italia",
+                  "indirizzo",
+                  "consegna",
+                  "disponibile",
+                  "pokemon",
+                  "B0H9HFPRRD",
               ]
 
-              confirm_button = None
-              confirm_selector = None
+              found = set()
 
-              for selector in confirm_selectors:
-
-                  locator = page.locator(
-                      selector
-                  )
-
-                  print()
-                  print(
-                      f"SELECTOR: {selector}"
-                  )
-
-                  print(
-                      "COUNT:",
-                      locator.count()
-                  )
-
-                  for i in range(
-                      locator.count()
-                  ):
-
-                      element = locator.nth(i)
-
-                      try:
-                          visible = element.is_visible()
-                      except Exception:
-                          visible = False
-
-                      print(
-                          f"  #{i} "
-                          f"visible={visible}"
-                      )
-
-                      if (
-                          confirm_button is None
-                          and visible
-                      ):
-                          confirm_button = element
-                          confirm_selector = selector
-
-              if confirm_button is None:
-
-                  print()
-                  print(
-                      "ERROR: REAL CAP CONFIRM "
-                      "BUTTON NOT FOUND"
-                  )
-
-                  browser.close()
-                  raise SystemExit(1)
-
-              print()
-              print(
-                  "SELECTED:",
-                  confirm_selector
-              )
-
-              print(
-                  "TYPE:",
-                  confirm_button.get_attribute(
-                      "type"
-                  )
-              )
-
-              print(
-                  "ARIA-LABELLED-BY:",
-                  confirm_button.get_attribute(
-                      "aria-labelledby"
-                  )
-              )
-
-              print(
-                  "DISABLED:",
-                  confirm_button.is_disabled()
-              )
-
-              # ---------------------------------------------------------
-              # 5. SUCCESS DIALOG BEFORE CLICK
-              # ---------------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("SUCCESS DIALOG BEFORE CONFIRM")
-              print("=" * 80)
-
-              success_dialog = page.locator(
-                  "#GLUXHiddenSuccessDialog"
-              ).first
-
-              print(
-                  "COUNT:",
-                  success_dialog.count()
-              )
-
-              if success_dialog.count() > 0:
-
-                  print(
-                      "VISIBLE:",
-                      success_dialog.is_visible()
-                  )
-
-                  print(
-                      "TEXT:"
-                  )
-
-                  print(
-                      success_dialog.inner_text().strip()
-                  )
-
-              # ---------------------------------------------------------
-              # 6. CLICK REAL CONFIRM
-              # ---------------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("CLICKING REAL CAP CONFIRM")
-              print("=" * 80)
-
-              confirm_button.click()
-
-              print()
-              print("CLICK SENT")
-
-              page.wait_for_timeout(2000)
-
-              # ---------------------------------------------------------
-              # 7. CHECK SUCCESS DIALOG
-              # ---------------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("SUCCESS DIALOG AFTER CONFIRM")
-              print("=" * 80)
-
-              success_dialog = page.locator(
-                  "#GLUXHiddenSuccessDialog"
-              ).first
-
-              if success_dialog.count() > 0:
-
-                  print(
-                      "VISIBLE:",
-                      success_dialog.is_visible()
-                  )
-
-                  print(
-                      "TEXT:"
-                  )
-
-                  print(
-                      success_dialog.inner_text().strip()
-                  )
-
-              else:
-
-                  print(
-                      "SUCCESS DIALOG NOT FOUND"
-                  )
-
-              # ---------------------------------------------------------
-              # 8. CHECK CONFIRMED ZIP
-              # ---------------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("CONFIRMED ZIP")
-              print("=" * 80)
-
-              confirmed_zip = page.locator(
-                  "#GLUXZipConfirmationValue"
-              ).first
-
-              print(
-                  "COUNT:",
-                  confirmed_zip.count()
-              )
-
-              if confirmed_zip.count() > 0:
-
-                  print(
-                      "VISIBLE:",
-                      confirmed_zip.is_visible()
-                  )
-
-                  print(
-                      "TEXT:",
-                      repr(
-                          confirmed_zip.inner_text().strip()
-                      )
-                  )
-
-              # ---------------------------------------------------------
-              # 9. CHECK CONTINUE BUTTON
-              # ---------------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("CONTINUE BUTTON")
-              print("=" * 80)
-
-              continue_button = page.locator(
-                  "#GLUXConfirmClose"
-              ).first
-
-              print(
-                  "COUNT:",
-                  continue_button.count()
-              )
-
-              if continue_button.count() > 0:
-
-                  print(
-                      "VISIBLE:",
-                      continue_button.is_visible()
-                  )
-
-                  print(
-                      "TAG:",
-                      continue_button.evaluate(
-                          "(el) => el.tagName"
-                      )
-                  )
-
-                  print(
-                      "TYPE:",
-                      continue_button.get_attribute(
-                          "type"
-                      )
-                  )
-
-              # ---------------------------------------------------------
-              # 10. CLICK CONTINUE IF VISIBLE
-              # ---------------------------------------------------------
-
-              if (
-                  continue_button.count() > 0
-                  and continue_button.is_visible()
-              ):
-
-                  print()
-                  print(
-                      "CLICKING CONTINUE..."
-                  )
-
-                  continue_button.click()
-
-                  page.wait_for_timeout(5000)
-
-              else:
-
-                  print()
-                  print(
-                      "CONTINUE NOT CLICKED"
-                  )
-
-              # ---------------------------------------------------------
-              # 11. FINAL DELIVERY
-              # ---------------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("FINAL DELIVERY")
-              print("=" * 80)
-
-              final_delivery = page.locator(
-                  "#glow-ingress-block"
-              ).first
-
-              if final_delivery.count() > 0:
-
-                  print(
-                      "VISIBLE:",
-                      final_delivery.is_visible()
-                  )
-
-                  print(
-                      "TEXT:"
-                  )
-
-                  print(
-                      final_delivery.inner_text().strip()
-                  )
-
-              else:
-
-                  print(
-                      "FINAL DELIVERY ELEMENT "
-                      "NOT FOUND"
-                  )
-
-              # ---------------------------------------------------------
-              # 12. SEARCH PAGE FOR CAP / ITALY / USA
-              # ---------------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("FINAL DELIVERY TEXT")
-              print("=" * 80)
-
-              body_text = page.locator(
-                  "body"
-              ).inner_text()
-
-              for line in body_text.splitlines():
+              for line in lines:
 
                   line = line.strip()
 
-                  if (
-                      "00100" in line
-                      or "roma" in line.lower()
-                      or "stati uniti" in line.lower()
-                      or "indirizzo di consegna"
-                      in line.lower()
-                      or "italia" == line.lower()
+                  if not line:
+                      continue
+
+                  lower = line.lower()
+
+                  if any(
+                      keyword in lower
+                      for keyword in keywords
                   ):
+                      if line not in found:
+                          print(line)
+                          found.add(line)
+
+              print()
+              print("=" * 80)
+              print("FIRST 80 BODY LINES")
+              print("=" * 80)
+
+              for line in lines[:80]:
+                  line = line.strip()
+
+                  if line:
                       print(line)
 
-              # ---------------------------------------------------------
-              # 13. PRODUCT
-              # ---------------------------------------------------------
-
               print()
               print("=" * 80)
-              print("PRODUCT")
-              print("=" * 80)
-
-              title = page.locator(
-                  "#productTitle"
-              ).first
-
-              if title.count() > 0:
-
-                  print(
-                      title.inner_text().strip()
-                  )
-
-              print()
-              print(
-                  "ADD TO CART:",
-                  page.locator(
-                      "#add-to-cart-button"
-                  ).count()
-              )
-
-              print(
-                  "BUY NOW:",
-                  page.locator(
-                      "#buy-now-button"
-                  ).count()
-              )
-
-              # ---------------------------------------------------------
-              # 14. FINAL COOKIES
-              # ---------------------------------------------------------
-
-              print()
-              print("=" * 80)
-              print("FINAL COOKIES")
+              print("COOKIES")
               print("=" * 80)
 
               for cookie in context.cookies():
@@ -565,7 +194,7 @@ jobs:
 
               print()
               print("=" * 80)
-              print("END TEST")
+              print("END")
               print("=" * 80)
 
               browser.close()

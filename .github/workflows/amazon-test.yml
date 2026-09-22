@@ -22,48 +22,196 @@ jobs:
           pip install playwright
           playwright install --with-deps chromium
 
-      - name: Test Amazon adapter
+      - name: Diagnose Amazon page
         run: |
           python - <<'PY'
-          from sites.amazon import check_stock
+          from playwright.sync_api import sync_playwright
 
-          url = (
-              "https://www.amazon.it/dp/B0H9HFPRRD/"
-          )
+          url = "https://www.amazon.it/dp/B0H9HFPRRD/"
 
-          print("=" * 80)
-          print("AMAZON STOCK ADAPTER TEST")
-          print("=" * 80)
-          print()
-          print("ASIN:")
-          print("B0H9HFPRRD")
-          print()
-          print("URL:")
-          print(url)
-          print()
-          print("Running check_stock()...")
-          print()
+          with sync_playwright() as p:
 
-          result = check_stock(url)
+              browser = p.chromium.launch(
+                  headless=True,
+                  args=[
+                      "--no-sandbox",
+                      "--disable-dev-shm-usage",
+                  ],
+              )
 
-          print("=" * 80)
-          print("RESULT")
-          print("=" * 80)
-          print(result)
-          print("=" * 80)
+              context = browser.new_context(
+                  locale="it-IT",
+                  timezone_id="Europe/Rome",
+                  viewport={
+                      "width": 1440,
+                      "height": 1000,
+                  },
+                  user_agent=(
+                      "Mozilla/5.0 (X11; Linux x86_64) "
+                      "AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) "
+                      "Chrome/131.0.0.0 Safari/537.36"
+                  ),
+              )
 
-          if result not in (
-              "AVAILABLE",
-              "OUT_OF_STOCK",
-              "UNKNOWN",
-              "ERROR",
-          ):
+              page = context.new_page()
+
+              print("=" * 80)
+              print("AMAZON PAGE DIAGNOSTIC")
+              print("=" * 80)
               print()
-              print("TEST FAILED")
-              print("Invalid adapter result:", result)
-              raise SystemExit(1)
 
-          print()
-          print("TEST PASSED")
-          print("Adapter returned a valid stock state.")
+              try:
+                  response = page.goto(
+                      url,
+                      wait_until="domcontentloaded",
+                      timeout=30000,
+                  )
+
+                  print("HTTP STATUS:")
+                  print(
+                      response.status
+                      if response
+                      else "NO RESPONSE"
+                  )
+                  print()
+
+              except Exception as e:
+                  print("PAGE LOAD ERROR:")
+                  print(repr(e))
+                  browser.close()
+                  raise
+
+              page.wait_for_timeout(5000)
+
+              print("FINAL URL:")
+              print(page.url)
+              print()
+
+              print("PAGE TITLE:")
+              print(page.title())
+              print()
+
+              print("H1 COUNT:")
+              print(page.locator("h1").count())
+              print()
+
+              print("PRODUCT TITLE COUNT:")
+              print(
+                  page.locator("#productTitle").count()
+              )
+              print()
+
+              if page.locator("#productTitle").count() > 0:
+                  print("PRODUCT TITLE:")
+                  print(
+                      page.locator("#productTitle")
+                      .first
+                      .inner_text()
+                      .strip()
+                  )
+                  print()
+
+              print("ASIN INPUT COUNT:")
+              print(
+                  page.locator(
+                      'input[name="ASIN"]'
+                  ).count()
+              )
+              print()
+
+              print("ADD TO CART COUNT:")
+              print(
+                  page.locator(
+                      "#add-to-cart-button"
+                  ).count()
+              )
+              print()
+
+              print("BUY NOW COUNT:")
+              print(
+                  page.locator(
+                      "#buy-now-button"
+                  ).count()
+              )
+              print()
+
+              print("BUYBOX COUNT:")
+              print(
+                  page.locator("#buybox").count()
+              )
+              print()
+
+              print("BUYBOX FEATURE COUNT:")
+              print(
+                  page.locator(
+                      "#buybox_feature_div"
+                  ).count()
+              )
+              print()
+
+              body_text = (
+                  page.locator("body")
+                  .inner_text()
+                  .strip()
+              )
+
+              print("=" * 80)
+              print("IMPORTANT BODY TEXT")
+              print("=" * 80)
+
+              lines = [
+                  line.strip()
+                  for line in body_text.splitlines()
+                  if line.strip()
+              ]
+
+              interesting = [
+                  "captcha",
+                  "robot",
+                  "non disponibile",
+                  "disponibile",
+                  "aggiungi al carrello",
+                  "acquista ora",
+                  "tutte le opzioni",
+                  "compra",
+                  "buy now",
+                  "add to cart",
+                  "currently unavailable",
+                  "unavailable",
+                  "sign in",
+                  "accedi",
+              ]
+
+              found = []
+
+              for line in lines:
+                  lower = line.lower()
+
+                  if any(
+                      marker in lower
+                      for marker in interesting
+                  ):
+                      found.append(line)
+
+              if found:
+                  for line in found[:100]:
+                      print(line)
+              else:
+                  print("NO INTERESTING LINES FOUND")
+
+              print()
+              print("=" * 80)
+              print("FIRST 120 BODY LINES")
+              print("=" * 80)
+
+              for line in lines[:120]:
+                  print(line)
+
+              print()
+              print("=" * 80)
+              print("END DIAGNOSTIC")
+              print("=" * 80)
+
+              browser.close()
           PY

@@ -1,3 +1,4 @@
+```python
 import json
 import os
 import sys
@@ -5,38 +6,51 @@ from datetime import datetime, timezone
 
 import requests
 
-from sites.playstation_direct import check_stock
+from sites.playstation_direct import check_stock as check_playstation_direct
+from sites.shopify import check_stock as check_shopify
 
 
 PRODUCTS = {
     "wolverine_battle_yellow_covers": {
         "name": "Wolverine Battle Yellow PS5 Pro Console Covers",
+        "site": "playstation_direct",
         "url": "https://direct.playstation.com/it-it/buy-accessories/playstation5-pro-console-covers-marvels-wolverine-battle-yellow-limited-edition",
     },
 
     "ps5_pro": {
         "name": "PlayStation 5 Pro",
+        "site": "playstation_direct",
         "url": "https://direct.playstation.com/it-it/buy-consoles/playstation5-pro-console",
     },
 
     "wolverine_battle_yellow_controller": {
         "name": "DualSense Wolverine Battle Yellow",
+        "site": "playstation_direct",
         "url": "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-marvels-wolverine-battle-yellow-limited-edition-for-ps5-pc-mac-mobile",
     },
 
     "gta_vi_black_controller": {
         "name": "DualSense GTA VI Black",
+        "site": "playstation_direct",
         "url": "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-grand-theft-auto-vi-black-limited-edition-for-ps5-pc-mac-mobile",
     },
 
     "gta_vi_white_controller": {
         "name": "DualSense GTA VI White",
+        "site": "playstation_direct",
         "url": "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-grand-theft-auto-vi-white-limited-edition-for-ps5-pc-mac-mobile",
     },
 
     "wolverine_adamantium_controller": {
         "name": "DualSense Wolverine Adamantium",
+        "site": "playstation_direct",
         "url": "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-marvels-wolverine-adamantium-limited-edition-for-ps5-pc-mac-mobile",
+    },
+
+    "gta_vi_album_vinyl": {
+        "name": "GTA VI The Album - Limited-Edition Vinyl",
+        "site": "shopify",
+        "url": "https://www.gtavi-thealbum.com/en-eu/products/grand-theft-auto-vi-the-album-limited-edition-vinyl",
     },
 }
 
@@ -66,10 +80,6 @@ def save_state(state):
 
 
 def send_telegram(notifications):
-    """
-    Invia su Telegram tutte le nuove disponibilità rilevate.
-    """
-
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
 
@@ -82,7 +92,6 @@ def send_telegram(notifications):
     success = True
 
     for item in notifications:
-
         message = (
             "🟢 DISPONIBILE\n\n"
             f"{item['name']}\n\n"
@@ -112,32 +121,49 @@ def send_telegram(notifications):
     return success
 
 
+def check_product(product):
+    """
+    Seleziona automaticamente l'adapter corretto
+    in base al sito del prodotto.
+    """
+
+    site = product.get("site")
+    url = product["url"]
+
+    if site == "playstation_direct":
+        return check_playstation_direct(url)
+
+    if site == "shopify":
+        return check_shopify(url)
+
+    print(f"Unknown site adapter: {site}")
+    return "UNKNOWN"
+
+
 def main():
     state = load_state()
-
     now = datetime.now(timezone.utc).isoformat()
 
     print("=" * 80)
-    print("PLAYSTATION DIRECT STOCK MONITOR")
+    print("PLAYSTATION / SHOPIFY STOCK MONITOR")
     print("=" * 80)
     print()
 
     notifications = []
 
     for product_id, product in PRODUCTS.items():
-
         print(f"Checking: {product['name']}")
+        print(f"  Site: {product['site']}")
 
-        status = check_stock(product["url"])
-
+        status = check_product(product)
         previous = state.get(product_id, {}).get("status")
 
         print(f"  Previous: {previous}")
         print(f"  Current:  {status}")
 
-        # ============================================================
-        # NOTIFICA
-        # ============================================================
+        # ==========================================================
+        # NUOVA DISPONIBILITÀ
+        # ==========================================================
 
         if status == "AVAILABLE" and previous != "AVAILABLE":
             notifications.append(
@@ -148,9 +174,9 @@ def main():
                 }
             )
 
-        # ============================================================
-        # AGGIORNAMENTO STATO
-        # ============================================================
+        # ==========================================================
+        # AGGIORNAMENTO STATO AFFIDABILE
+        # ==========================================================
 
         if status in ("AVAILABLE", "OUT_OF_STOCK"):
             state[product_id] = {
@@ -159,10 +185,13 @@ def main():
                 "last_result": status,
             }
 
-        else:
-            # UNKNOWN / ERROR:
-            # manteniamo l'ultimo stato affidabile.
+        # ==========================================================
+        # UNKNOWN / ERROR
+        #
+        # Non sovrascriviamo lo stato affidabile precedente.
+        # ==========================================================
 
+        else:
             previous_data = state.get(product_id, {})
 
             state[product_id] = {
@@ -172,6 +201,10 @@ def main():
             }
 
         print()
+
+    # ==============================================================
+    # SALVATAGGIO STATO
+    # ==============================================================
 
     save_state(state)
 
@@ -208,3 +241,4 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+```

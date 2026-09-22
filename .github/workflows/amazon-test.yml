@@ -1,4 +1,4 @@
-name: Amazon Location From Home Test
+name: Amazon Offers Diagnostic
 
 on:
   workflow_dispatch:
@@ -22,7 +22,7 @@ jobs:
           pip install playwright
           playwright install --with-deps chromium
 
-      - name: Test Amazon location from home
+      - name: Analyze Amazon offers
         run: |
           python - <<'PY'
           from playwright.sync_api import sync_playwright
@@ -53,8 +53,12 @@ jobs:
               page = context.new_page()
 
               print("=" * 80)
-              print("AMAZON LOCATION FROM HOME TEST")
+              print("AMAZON OFFERS DIAGNOSTIC")
               print("=" * 80)
+
+              # --------------------------------------------------
+              # 1. AMAZON HOME
+              # --------------------------------------------------
 
               print()
               print("LOADING AMAZON HOME...")
@@ -70,129 +74,77 @@ jobs:
                   response.status if response else "NO RESPONSE"
               )
 
-              print(
-                  "URL:",
-                  page.url
-              )
-
               page.wait_for_timeout(4000)
 
-              print()
-              print("=" * 80)
-              print("INITIAL PAGE")
-              print("=" * 80)
-
-              print(
-                  "TITLE:",
-                  repr(page.title())
-              )
-
-              body = page.locator("body").inner_text(
-                  timeout=10000
-              )
-
-              print(
-                  "BODY LENGTH:",
-                  len(body)
-              )
-
-              print(
-                  "BODY FIRST 1500:"
-              )
-
-              print(body[:1500])
-
-              print()
-              print("=" * 80)
-              print("CONTINUE SHOPPING")
-              print("=" * 80)
-
+              # Gestione pagina intermedia
               continue_buttons = page.get_by_text(
                   "Continua con gli acquisti",
                   exact=True
               )
 
-              print(
-                  "COUNT:",
-                  continue_buttons.count()
-              )
-
               target = None
 
-              for i in range(
-                  continue_buttons.count()
-              ):
+              for i in range(continue_buttons.count()):
 
                   element = continue_buttons.nth(i)
 
                   try:
+
                       if element.is_visible():
+
                           target = element
                           break
+
                   except Exception:
+
                       pass
 
               if target:
 
-                  print(
-                      "CLICKING CONTINUE..."
-                  )
+                  print("INTERMEDIATE PAGE DETECTED")
+                  print("CLICKING CONTINUE SHOPPING...")
 
                   target.click()
 
                   page.wait_for_timeout(5000)
 
+              # --------------------------------------------------
+              # 2. DELIVERY
+              # --------------------------------------------------
+
               print()
               print("=" * 80)
-              print("AMAZON HOME AFTER CONTINUE")
+              print("CURRENT DELIVERY")
               print("=" * 80)
-
-              print(
-                  "TITLE:",
-                  repr(page.title())
-              )
-
-              print(
-                  "URL:",
-                  page.url
-              )
 
               delivery = page.locator(
                   "#glow-ingress-block"
               ).first
 
-              print()
               print(
                   "DELIVERY COUNT:",
                   delivery.count()
               )
 
-              if delivery.count() > 0:
-
-                  print(
-                      "DELIVERY VISIBLE:",
-                      delivery.is_visible()
-                  )
-
-                  if delivery.is_visible():
-
-                      print(
-                          "DELIVERY:",
-                          delivery.inner_text().strip()
-                      )
-
               if delivery.count() == 0:
 
-                  print(
-                      "DELIVERY ELEMENT NOT FOUND."
-                  )
+                  print("DELIVERY ELEMENT NOT FOUND")
 
                   browser.close()
                   raise SystemExit(1)
 
+              print(
+                  "DELIVERY:",
+                  delivery.inner_text().strip()
+              )
+
+              # --------------------------------------------------
+              # 3. SET ITALIAN CAP
+              # --------------------------------------------------
+
               print()
               print("=" * 80)
-              print("OPENING DELIVERY")
+              print("SETTING ITALIAN CAP")
               print("=" * 80)
 
               delivery.click()
@@ -203,35 +155,23 @@ jobs:
                   "#GLUXZipUpdateInput"
               ).first
 
-              print(
-                  "CAP COUNT:",
-                  cap.count()
-              )
-
               if cap.count() == 0:
 
-                  print(
-                      "CAP INPUT NOT FOUND."
-                  )
-
-                  print(
-                      "BODY:",
-                      page.locator("body").inner_text()[:5000]
-                  )
+                  print("CAP INPUT NOT FOUND")
 
                   browser.close()
                   raise SystemExit(1)
-
-              print(
-                  "CAP VISIBLE:",
-                  cap.is_visible()
-              )
 
               cap.fill(CAP)
 
               confirm = page.locator(
                   "#GLUXZipInputSection input[type='submit']"
               ).first
+
+              print(
+                  "CAP:",
+                  cap.input_value()
+              )
 
               print(
                   "CONFIRM COUNT:",
@@ -248,145 +188,45 @@ jobs:
                   confirm.is_disabled()
               )
 
-              print()
-              print("=" * 80)
-              print("BEFORE CAP CONFIRM")
-              print("=" * 80)
-
-              print(
-                  "CAP:",
-                  cap.input_value()
-              )
-
-              print()
-              print("CLICKING CAP CONFIRM...")
-
               confirm.click()
 
               page.wait_for_timeout(5000)
-
-              print()
-              print("=" * 80)
-              print("AFTER CAP CONFIRM")
-              print("=" * 80)
 
               confirmed = page.locator(
                   "#GLUXZipConfirmationValue"
               ).first
 
-              print(
-                  "CONFIRMED ZIP COUNT:",
-                  confirmed.count()
-              )
-
               if confirmed.count() > 0:
 
                   try:
+
                       print(
                           "CONFIRMED ZIP:",
                           repr(
                               confirmed.inner_text().strip()
                           )
                       )
+
                   except Exception:
+
                       pass
 
-              success = page.locator(
-                  "#GLUXHiddenSuccessDialog"
-              ).first
-
-              print()
-              print(
-                  "SUCCESS DIALOG COUNT:",
-                  success.count()
-              )
-
-              if success.count() > 0:
-
-                  print(
-                      "SUCCESS VISIBLE:",
-                      success.is_visible()
-                  )
-
-                  try:
-                      print(
-                          "SUCCESS TEXT:",
-                          success.inner_text().strip()[:1500]
-                      )
-                  except Exception:
-                      pass
-
-              close = page.locator(
-                  "#GLUXConfirmClose"
-              ).first
-
-              print()
-              print(
-                  "CLOSE COUNT:",
-                  close.count()
-              )
-
-              if close.count() > 0:
-
-                  print(
-                      "CLOSE VISIBLE:",
-                      close.is_visible()
-                  )
-
-              if close.count() > 0 and close.is_visible():
-
-                  print(
-                      "CLICKING CLOSE..."
-                  )
-
-                  close.click()
-
-                  page.wait_for_timeout(5000)
+              # --------------------------------------------------
+              # 4. OPEN PRODUCT
+              # --------------------------------------------------
 
               print()
               print("=" * 80)
-              print("HOME AFTER LOCATION CHANGE")
-              print("=" * 80)
-
-              delivery_final = page.locator(
-                  "#glow-ingress-block"
-              ).first
-
-              print(
-                  "DELIVERY COUNT:",
-                  delivery_final.count()
-              )
-
-              if delivery_final.count() > 0:
-
-                  print(
-                      "DELIVERY:",
-                      delivery_final.inner_text().strip()
-                  )
-
-              print()
-              print("COOKIES:")
-
-              for cookie in context.cookies():
-
-                  print(
-                      cookie["name"],
-                      "=",
-                      cookie["value"][:300]
-                  )
-
-              print()
-              print("=" * 80)
-              print("NOW OPENING PRODUCT")
+              print("OPENING PRODUCT")
               print("=" * 80)
 
               page.goto(
                   PRODUCT_URL,
                   wait_until="domcontentloaded",
-                  timeout=45000
+                  timeout=45000,
               )
 
-              page.wait_for_timeout(5000)
+              page.wait_for_timeout(6000)
 
               print(
                   "PRODUCT URL:",
@@ -394,99 +234,548 @@ jobs:
               )
 
               print(
-                  "PRODUCT TITLE:",
-                  repr(page.title())
+                  "TITLE:",
+                  page.title()
               )
 
-              print()
-              print("PRODUCT SELECTORS:")
-
-              selectors = [
-                  "#productTitle",
-                  "#buybox",
-                  "#glow-ingress-block",
-                  "#add-to-cart-button",
-                  "#buy-now-button",
-              ]
-
-              for selector in selectors:
-
-                  locator = page.locator(
-                      selector
-                  )
-
-                  count = locator.count()
-
-                  visible = False
-
-                  if count > 0:
-
-                      try:
-                          visible = locator.first.is_visible()
-                      except Exception:
-                          pass
-
-                  print(
-                      selector,
-                      "count=",
-                      count,
-                      "visible=",
-                      visible
-                  )
-
-                  if count > 0 and visible:
-
-                      try:
-                          print(
-                              "  TEXT:",
-                              repr(
-                                  locator.first.inner_text(
-                                      timeout=3000
-                                  ).strip()[:2000]
-                              )
-                          )
-                      except Exception:
-                          pass
+              # --------------------------------------------------
+              # 5. BASIC PRODUCT INFO
+              # --------------------------------------------------
 
               print()
               print("=" * 80)
-              print("FINAL DELIVERY")
+              print("BASIC PRODUCT INFO")
               print("=" * 80)
+
+              title = page.locator(
+                  "#productTitle"
+              ).first
+
+              print(
+                  "PRODUCT TITLE COUNT:",
+                  title.count()
+              )
+
+              if title.count() > 0:
+
+                  try:
+
+                      print(
+                          "PRODUCT TITLE:",
+                          title.inner_text().strip()
+                      )
+
+                  except Exception:
+
+                      pass
 
               delivery_product = page.locator(
                   "#glow-ingress-block"
               ).first
 
-              if delivery_product.count() > 0:
+              print(
+                  "DELIVERY:",
+                  delivery_product.inner_text().strip()
+                  if delivery_product.count() > 0
+                  else "NOT FOUND"
+              )
 
-                  try:
-                      print(
-                          delivery_product.inner_text().strip()
-                      )
-                  except Exception:
-                      pass
+              # --------------------------------------------------
+              # 6. COMPLETE BUYBOX
+              # --------------------------------------------------
 
               print()
               print("=" * 80)
-              print("FINAL BUYBOX")
+              print("COMPLETE BUYBOX")
               print("=" * 80)
 
               buybox = page.locator(
                   "#buybox"
               ).first
 
+              print(
+                  "BUYBOX COUNT:",
+                  buybox.count()
+              )
+
               if buybox.count() > 0:
 
                   try:
+
                       print(
-                          buybox.inner_text().strip()[:3000]
+                          buybox.inner_text().strip()[:10000]
                       )
-                  except Exception:
-                      pass
+
+                  except Exception as e:
+
+                      print(
+                          "BUYBOX TEXT ERROR:",
+                          repr(e)
+                      )
+
+              # --------------------------------------------------
+              # 7. PURCHASE-RELATED TEXT
+              # --------------------------------------------------
 
               print()
               print("=" * 80)
-              print("END TEST")
+              print("PURCHASE-RELATED TEXT")
+              print("=" * 80)
+
+              body_text = page.locator(
+                  "body"
+              ).inner_text(
+                  timeout=10000
+              )
+
+              keywords = [
+                  "Disponibile",
+                  "Non disponibile",
+                  "Esaurito",
+                  "su invito",
+                  "Richiedi invito",
+                  "Aggiungi al carrello",
+                  "Acquista ora",
+                  "Visualizza tutte le opzioni di acquisto",
+                  "Venduto da",
+                  "Speditore",
+                  "Amazon",
+              ]
+
+              for keyword in keywords:
+
+                  print()
+                  print(
+                      "KEYWORD:",
+                      repr(keyword)
+                  )
+
+                  found = False
+
+                  for line in body_text.splitlines():
+
+                      line_clean = line.strip()
+
+                      if keyword.lower() in line_clean.lower():
+
+                          print(
+                              " ",
+                              repr(line_clean[:500])
+                          )
+
+                          found = True
+
+                  if not found:
+
+                      print("  NOT FOUND")
+
+              # --------------------------------------------------
+              # 8. PURCHASE BUTTONS
+              # --------------------------------------------------
+
+              print()
+              print("=" * 80)
+              print("PURCHASE BUTTONS")
+              print("=" * 80)
+
+              buttons = page.locator(
+                  "button, input[type='submit'], input[type='button'], a"
+              )
+
+              print(
+                  "TOTAL CANDIDATE ELEMENTS:",
+                  buttons.count()
+              )
+
+              purchase_terms = [
+                  "carrello",
+                  "acquista",
+                  "invito",
+                  "opzioni di acquisto",
+                  "disponibile",
+                  "ordine",
+                  "buy",
+                  "cart",
+              ]
+
+              for i in range(buttons.count()):
+
+                  element = buttons.nth(i)
+
+                  try:
+
+                      if not element.is_visible():
+                          continue
+
+                      text = ""
+
+                      try:
+
+                          text = element.inner_text().strip()
+
+                      except Exception:
+
+                          pass
+
+                      aria = element.get_attribute(
+                          "aria-label"
+                      ) or ""
+
+                      value = element.get_attribute(
+                          "value"
+                      ) or ""
+
+                      href = element.get_attribute(
+                          "href"
+                      ) or ""
+
+                      combined = " ".join(
+                          [
+                              text,
+                              aria,
+                              value,
+                              href,
+                          ]
+                      )
+
+                      if not any(
+                          term.lower()
+                          in combined.lower()
+                          for term in purchase_terms
+                      ):
+
+                          continue
+
+                      print()
+                      print(
+                          "ELEMENT",
+                          i
+                      )
+
+                      print(
+                          "  TAG:",
+                          element.evaluate(
+                              "(e) => e.tagName"
+                          )
+                      )
+
+                      print(
+                          "  TEXT:",
+                          repr(text[:1000])
+                      )
+
+                      print(
+                          "  ARIA:",
+                          repr(aria[:1000])
+                      )
+
+                      print(
+                          "  VALUE:",
+                          repr(value[:1000])
+                      )
+
+                      print(
+                          "  HREF:",
+                          repr(href[:1000])
+                      )
+
+                      print(
+                          "  ID:",
+                          repr(
+                              element.get_attribute("id")
+                          )
+                      )
+
+                      print(
+                          "  CLASS:",
+                          repr(
+                              element.get_attribute("class")
+                          )
+                      )
+
+                      print(
+                          "  DISABLED:",
+                          element.is_disabled()
+                          if element.evaluate(
+                              "(e) => ['BUTTON','INPUT'].includes(e.tagName)"
+                          )
+                          else "N/A"
+                      )
+
+                  except Exception as e:
+
+                      print(
+                          "ELEMENT ERROR:",
+                          repr(e)
+                      )
+
+              # --------------------------------------------------
+              # 9. LINKS TO ALL PURCHASE OPTIONS
+              # --------------------------------------------------
+
+              print()
+              print("=" * 80)
+              print("ALL PURCHASE OPTION LINKS")
+              print("=" * 80)
+
+              links = page.locator(
+                  "a"
+              )
+
+              for i in range(links.count()):
+
+                  link = links.nth(i)
+
+                  try:
+
+                      if not link.is_visible():
+                          continue
+
+                      text = link.inner_text().strip()
+
+                      if (
+                          "opzioni di acquisto"
+                          in text.lower()
+                          or
+                          "acquista"
+                          in text.lower()
+                          or
+                          "carrello"
+                          in text.lower()
+                          or
+                          "invito"
+                          in text.lower()
+                      ):
+
+                          print()
+                          print(
+                              "LINK",
+                              i
+                          )
+
+                          print(
+                              "  TEXT:",
+                              repr(text[:1000])
+                          )
+
+                          print(
+                              "  HREF:",
+                              repr(
+                                  link.get_attribute("href")
+                              )
+                          )
+
+                          print(
+                              "  ID:",
+                              repr(
+                                  link.get_attribute("id")
+                              )
+                          )
+
+                          print(
+                              "  CLASS:",
+                              repr(
+                                  link.get_attribute("class")
+                              )
+                          )
+
+                  except Exception:
+
+                      pass
+
+              # --------------------------------------------------
+              # 10. OFFER CONTAINERS
+              # --------------------------------------------------
+
+              print()
+              print("=" * 80)
+              print("POSSIBLE OFFER CONTAINERS")
+              print("=" * 80)
+
+              selectors = [
+                  "#buybox",
+                  "#buybox_feature_div",
+                  "#desktop_buybox",
+                  "#olp_feature_div",
+                  "#olp",
+                  "#aod-container",
+                  "#aod-offer",
+                  "[id*='offer']",
+                  "[class*='offer']",
+              ]
+
+              for selector in selectors:
+
+                  try:
+
+                      locator = page.locator(
+                          selector
+                      )
+
+                      count = locator.count()
+
+                      print()
+                      print(
+                          "SELECTOR:",
+                          selector,
+                          "COUNT:",
+                          count
+                      )
+
+                      for i in range(
+                          min(count, 10)
+                      ):
+
+                          element = locator.nth(i)
+
+                          try:
+
+                              if not element.is_visible():
+                                  continue
+
+                              text = element.inner_text().strip()
+
+                              if text:
+
+                                  print(
+                                      "  ELEMENT",
+                                      i,
+                                      "TEXT:",
+                                      repr(
+                                          text[:3000]
+                                      )
+                                  )
+
+                          except Exception:
+
+                              pass
+
+                  except Exception as e:
+
+                      print(
+                          "SELECTOR ERROR:",
+                          selector,
+                          repr(e)
+                      )
+
+              # --------------------------------------------------
+              # 11. PRICE ELEMENTS
+              # --------------------------------------------------
+
+              print()
+              print("=" * 80)
+              print("PRICE ELEMENTS")
+              print("=" * 80)
+
+              price_selectors = [
+                  ".a-price",
+                  ".a-price-whole",
+                  ".a-price-fraction",
+                  "#corePrice_feature_div",
+                  "#apex_desktop",
+                  "#price",
+                  "#priceblock_ourprice",
+                  "#priceblock_dealprice",
+              ]
+
+              for selector in price_selectors:
+
+                  locator = page.locator(
+                      selector
+                  )
+
+                  print(
+                      selector,
+                      "COUNT:",
+                      locator.count()
+                  )
+
+                  for i in range(
+                      min(locator.count(), 10)
+                  ):
+
+                      element = locator.nth(i)
+
+                      try:
+
+                          if element.is_visible():
+
+                              print(
+                                  "  TEXT:",
+                                  repr(
+                                      element.inner_text().strip()[:1000]
+                                  )
+                              )
+
+                      except Exception:
+
+                          pass
+
+              # --------------------------------------------------
+              # 12. FINAL BODY SNIPPET
+              # --------------------------------------------------
+
+              print()
+              print("=" * 80)
+              print("BODY AROUND PURCHASE TERMS")
+              print("=" * 80)
+
+              lines = body_text.splitlines()
+
+              interesting_indexes = []
+
+              search_terms = [
+                  "disponibile",
+                  "invito",
+                  "carrello",
+                  "acquista",
+                  "opzioni di acquisto",
+                  "esaurito",
+                  "non disponibile",
+              ]
+
+              for index, line in enumerate(lines):
+
+                  if any(
+                      term in line.lower()
+                      for term in search_terms
+                  ):
+
+                      interesting_indexes.append(
+                          index
+                      )
+
+              printed = set()
+
+              for index in interesting_indexes:
+
+                  start = max(
+                      0,
+                      index - 3
+                  )
+
+                  end = min(
+                      len(lines),
+                      index + 4
+                  )
+
+                  for j in range(
+                      start,
+                      end
+                  ):
+
+                      if j in printed:
+                          continue
+
+                      printed.add(j)
+
+                      print(
+                          f"{j}: {lines[j]}"
+                      )
+
+              print()
+              print("=" * 80)
+              print("END DIAGNOSTIC")
               print("=" * 80)
 
               browser.close()

@@ -1,10 +1,10 @@
-name: Amazon Cart Test
+name: Amazon Offers Diagnostic
 
 on:
   workflow_dispatch:
 
 jobs:
-  amazon-cart-test:
+  amazon-diagnostic:
     runs-on: ubuntu-latest
 
     steps:
@@ -22,26 +22,61 @@ jobs:
           pip install playwright
           playwright install --with-deps chromium
 
-      - name: Test 55 euro offer
+      - name: Diagnose Amazon offers
         run: |
-          cat > amazon_cart_test.py <<'PY'
+          cat > amazon_diagnostic.py <<'PY'
           from playwright.sync_api import sync_playwright
           import re
 
           PRODUCT_URL = "https://www.amazon.it/dp/B0H9HFPRRD/"
           ZIP_CODE = "00100"
-          TARGET_PRICE = "55,00"
 
           def clean(text):
               return re.sub(r"\s+", " ", text or "").strip()
 
+          def print_matches(body, keyword):
+              print()
+              print("-" * 80)
+              print("KEYWORD:", repr(keyword))
+              print("-" * 80)
+
+              found = False
+
+              for i, line in enumerate(body.splitlines()):
+                  line_clean = clean(line)
+
+                  if keyword.lower() in line_clean.lower():
+                      found = True
+
+                      print()
+                      print("MATCH:", repr(line_clean[:2000]))
+
+                      # Print nearby lines too
+                      lines = body.splitlines()
+                      start = max(0, i - 3)
+                      end = min(len(lines), i + 4)
+
+                      print("CONTEXT:")
+                      for context_line in lines[start:end]:
+                          context_clean = clean(context_line)
+
+                          if context_clean:
+                              print(" ", context_clean[:2000])
+
+              if not found:
+                  print("NOT FOUND")
+
           with sync_playwright() as p:
+
               browser = p.chromium.launch(headless=True)
 
               context = browser.new_context(
                   locale="it-IT",
                   timezone_id="Europe/Rome",
-                  viewport={"width": 1440, "height": 1000},
+                  viewport={
+                      "width": 1440,
+                      "height": 1000
+                  },
               )
 
               page = context.new_page()
@@ -56,7 +91,11 @@ jobs:
                   timeout=60000,
               )
 
-              print("HTTP:", response.status if response else "NONE")
+              print(
+                  "HTTP:",
+                  response.status if response else "NONE"
+              )
+
               print("URL:", page.url)
               print("TITLE:", page.title())
 
@@ -68,25 +107,49 @@ jobs:
               )
 
               if continue_buttons.count() > 0:
+
+                  print(
+                      "CONTINUE BUTTONS:",
+                      continue_buttons.count()
+                  )
+
                   for i in range(continue_buttons.count()):
+
                       try:
                           button = continue_buttons.nth(i)
 
                           if button.is_visible():
-                              print("CLICK: Continua con gli acquisti")
+
+                              print(
+                                  "CLICKING CONTINUE BUTTON:",
+                                  i
+                              )
+
                               button.click()
+
                               page.wait_for_timeout(5000)
+
                               break
 
-                      except Exception:
-                          pass
+                      except Exception as e:
+                          print(
+                              "CONTINUE CLICK ERROR:",
+                              repr(e)
+                          )
 
               print()
               print("=" * 80)
               print("2. SET DELIVERY ZIP")
               print("=" * 80)
 
-              ingress = page.locator("#glow-ingress-block")
+              ingress = page.locator(
+                  "#glow-ingress-block"
+              )
+
+              print(
+                  "DELIVERY BLOCK COUNT:",
+                  ingress.count()
+              )
 
               if ingress.count() == 0:
                   print("ERROR: DELIVERY BLOCK NOT FOUND")
@@ -95,13 +158,25 @@ jobs:
 
               print(
                   "DELIVERY BEFORE:",
-                  repr(clean(ingress.first.inner_text()))
+                  repr(
+                      clean(
+                          ingress.first.inner_text()
+                      )
+                  )
               )
 
               ingress.first.click()
+
               page.wait_for_timeout(1500)
 
-              zip_input = page.locator("#GLUXZipUpdateInput")
+              zip_input = page.locator(
+                  "#GLUXZipUpdateInput"
+              )
+
+              print(
+                  "ZIP INPUT COUNT:",
+                  zip_input.count()
+              )
 
               if zip_input.count() == 0:
                   print("ERROR: ZIP INPUT NOT FOUND")
@@ -110,8 +185,18 @@ jobs:
 
               zip_input.fill(ZIP_CODE)
 
+              print(
+                  "ZIP FILLED:",
+                  ZIP_CODE
+              )
+
               confirm = page.locator(
                   "#GLUXZipInputSection input[type='submit']"
+              )
+
+              print(
+                  "ZIP CONFIRM COUNT:",
+                  confirm.count()
               )
 
               if confirm.count() == 0:
@@ -119,17 +204,38 @@ jobs:
                   browser.close()
                   raise SystemExit(1)
 
+              print(
+                  "ZIP CONFIRM VISIBLE:",
+                  confirm.first.is_visible()
+              )
+
+              print(
+                  "ZIP CONFIRM DISABLED:",
+                  confirm.first.is_disabled()
+              )
+
               confirm.first.click()
+
               page.wait_for_timeout(3000)
 
               confirmation = page.locator(
                   "#GLUXZipConfirmationValue"
               )
 
+              print(
+                  "CONFIRMATION COUNT:",
+                  confirmation.count()
+              )
+
               if confirmation.count() > 0:
+
                   print(
                       "CONFIRMED ZIP:",
-                      repr(clean(confirmation.first.inner_text()))
+                      repr(
+                          clean(
+                              confirmation.first.inner_text()
+                          )
+                      )
                   )
 
               print()
@@ -145,52 +251,131 @@ jobs:
 
               page.wait_for_timeout(5000)
 
-              print("PRODUCT URL:", page.url)
-              print("TITLE:", page.title())
+              print(
+                  "PRODUCT URL:",
+                  page.url
+              )
 
-              product_title = page.locator("#productTitle").first
+              print(
+                  "PRODUCT TITLE PAGE:",
+                  page.title()
+              )
+
+              product_title = page.locator(
+                  "#productTitle"
+              )
+
+              print(
+                  "PRODUCT TITLE COUNT:",
+                  product_title.count()
+              )
 
               if product_title.count() > 0:
+
                   print(
                       "PRODUCT:",
-                      clean(product_title.inner_text())
+                      clean(
+                          product_title.first.inner_text()
+                      )
                   )
 
               delivery = page.locator(
                   "#glow-ingress-block"
-              ).first
+              )
+
+              print(
+                  "DELIVERY BLOCK COUNT:",
+                  delivery.count()
+              )
 
               if delivery.count() > 0:
+
                   print(
-                      "DELIVERY:",
-                      repr(clean(delivery.inner_text()))
+                      "DELIVERY ON PRODUCT:",
+                      repr(
+                          clean(
+                              delivery.first.inner_text()
+                          )
+                      )
                   )
 
               print()
               print("=" * 80)
-              print("4. OPEN PURCHASE OPTIONS")
+              print("4. FIND PURCHASE OPTIONS LINK")
               print("=" * 80)
 
-              offer_link = page.locator(
+              offer_links = page.locator(
                   "a[href*='/gp/offer-listing/B0H9HFPRRD/']"
-              ).first
+              )
 
-              if offer_link.count() == 0:
-                  print("ERROR: OFFER LINK NOT FOUND")
+              print(
+                  "OFFER LINK COUNT:",
+                  offer_links.count()
+              )
+
+              if offer_links.count() == 0:
+
+                  print(
+                      "ERROR: OFFER LINK NOT FOUND"
+                  )
+
                   browser.close()
                   raise SystemExit(1)
 
-              href = offer_link.get_attribute("href")
+              for i in range(offer_links.count()):
 
-              print("OFFER HREF:", href)
+                  try:
 
-              offer_url = page.url.split("/dp/")[0] + href
+                      print()
+                      print(
+                          "OFFER LINK",
+                          i
+                      )
 
-              print("OFFER URL:", offer_url)
+                      print(
+                          "TEXT:",
+                          repr(
+                              clean(
+                                  offer_links.nth(i).inner_text()
+                              )
+                          )
+                      )
+
+                      print(
+                          "HREF:",
+                          offer_links.nth(i).get_attribute(
+                              "href"
+                          )
+                      )
+
+                  except Exception:
+                      pass
+
+              href = offer_links.first.get_attribute(
+                  "href"
+              )
+
+              offer_url = (
+                  "https://www.amazon.it"
+                  + href
+                  if href.startswith("/")
+                  else href
+              )
+
+              print()
+              print(
+                  "OFFER URL:",
+                  offer_url
+              )
+
+              print()
+              print("=" * 80)
+              print("5. OPEN OFFER PAGE")
+              print("=" * 80)
 
               offer_page = context.new_page()
 
-              response = offer_page.goto(
+              offer_response = offer_page.goto(
                   offer_url,
                   wait_until="domcontentloaded",
                   timeout=60000,
@@ -198,292 +383,247 @@ jobs:
 
               print(
                   "HTTP:",
-                  response.status if response else "NONE"
+                  offer_response.status
+                  if offer_response
+                  else "NONE"
               )
-              print("FINAL URL:", offer_page.url)
-              print("TITLE:", offer_page.title())
+
+              print(
+                  "FINAL URL:",
+                  offer_page.url
+              )
+
+              print(
+                  "TITLE:",
+                  offer_page.title()
+              )
 
               offer_page.wait_for_timeout(5000)
 
+              body = offer_page.locator(
+                  "body"
+              ).inner_text()
+
               print()
               print("=" * 80)
-              print("5. FIND 55 EURO OFFER")
+              print("6. BASIC OFFER PAGE INFORMATION")
               print("=" * 80)
 
-              body = offer_page.locator("body").inner_text()
+              print(
+                  "BODY LENGTH:",
+                  len(body)
+              )
 
-              lines = [
-                  clean(line)
-                  for line in body.splitlines()
-                  if clean(line)
+              print(
+                  "DELIVERY BLOCK COUNT:",
+                  offer_page.locator(
+                      "#glow-ingress-block"
+                  ).count()
+              )
+
+              delivery_offer = offer_page.locator(
+                  "#glow-ingress-block"
+              )
+
+              if delivery_offer.count() > 0:
+
+                  print(
+                      "DELIVERY:",
+                      repr(
+                          clean(
+                              delivery_offer.first.inner_text()
+                          )
+                      )
+                  )
+
+              print()
+              print(
+                  "PRODUCT TITLE COUNT:",
+                  offer_page.locator(
+                      "#productTitle"
+                  ).count()
+              )
+
+              print(
+                  "BUYBOX COUNT:",
+                  offer_page.locator(
+                      "#buybox"
+                  ).count()
+              )
+
+              print()
+              print("=" * 80)
+              print("7. SEARCH 55 EURO")
+              print("=" * 80)
+
+              print_matches(
+                  body,
+                  "55"
+              )
+
+              print_matches(
+                  body,
+                  "55,00"
+              )
+
+              print_matches(
+                  body,
+                  "55,00€"
+              )
+
+              print_matches(
+                  body,
+                  "EUR 55"
+              )
+
+              print()
+              print("=" * 80)
+              print("8. SEARCH PURCHASE WORDS")
+              print("=" * 80)
+
+              for keyword in [
+                  "Aggiungi al carrello",
+                  "Acquista ora",
+                  "Disponibile",
+                  "Disponibilità",
+                  "giocagio",
+                  "Venditore",
+                  "Speditore",
+                  "Opzioni di acquisto",
+                  "6 opzioni",
+                  "7 opzioni",
+              ]:
+
+                  print_matches(
+                      body,
+                      keyword
+                  )
+
+              print()
+              print("=" * 80)
+              print("9. ALL PRICE-LIKE TEXT")
+              print("=" * 80)
+
+              price_patterns = [
+                  r"\d{1,4},\d{2}\s*€",
+                  r"€\s*\d{1,4},\d{2}",
+                  r"EUR\s*\d{1,4}(?:,\d{2})?",
               ]
 
-              price_found = False
+              price_seen = set()
 
-              for i, line in enumerate(lines):
+              for pattern in price_patterns:
 
-                  if TARGET_PRICE in line:
+                  matches = re.findall(
+                      pattern,
+                      body,
+                      flags=re.IGNORECASE
+                  )
 
-                      print()
-                      print("PRICE MATCH:", repr(line))
+                  for match in matches:
 
-                      start = max(0, i - 5)
-                      end = min(len(lines), i + 15)
+                      match_clean = clean(match)
 
-                      print()
-                      print("CONTEXT:")
+                      if match_clean not in price_seen:
 
-                      for context_line in lines[start:end]:
-                          print(" ", context_line)
+                          price_seen.add(
+                              match_clean
+                          )
 
-                      price_found = True
+                          print(
+                              "PRICE:",
+                              repr(match_clean)
+                          )
 
-              print()
-              print("55 EURO PRICE FOUND:", price_found)
+              if not price_seen:
 
-              if not price_found:
-                  print("ERROR: 55 EURO OFFER NOT FOUND")
-                  browser.close()
-                  raise SystemExit(1)
+                  print(
+                      "NO PRICE-LIKE TEXT FOUND"
+                  )
 
               print()
               print("=" * 80)
-              print("6. FIND THE CORRECT OFFER CONTAINER")
+              print("10. GIOCAGIO CONTAINERS")
               print("=" * 80)
 
-              candidates = offer_page.locator(
+              containers = offer_page.locator(
                   "div, article, li"
               )
 
-              target_container = None
+              found_containers = 0
 
-              for i in range(min(candidates.count(), 3000)):
+              for i in range(
+                  min(
+                      containers.count(),
+                      4000
+                  )
+              ):
+
                   try:
-                      element = candidates.nth(i)
+
+                      element = containers.nth(i)
 
                       if not element.is_visible():
                           continue
 
-                      text = clean(element.inner_text())
+                      text = clean(
+                          element.inner_text()
+                      )
 
-                      if not text:
+                      lower = text.lower()
+
+                      if (
+                          "giocagio" not in lower
+                          and "55,00" not in lower
+                      ):
                           continue
 
-                      if TARGET_PRICE not in text:
-                          continue
-
-                      if "Aggiungi al carrello" not in text:
-                          continue
-
-                      if "giocagio" not in text.lower():
-                          continue
-
-                      # Avoid selecting an excessively large parent
                       if len(text) > 5000:
                           continue
 
-                      target_container = element
-                      print("TARGET CONTAINER FOUND")
-                      print("TEXT:")
-                      print(text[:4000])
-                      break
+                      found_containers += 1
 
-                  except Exception:
-                      pass
-
-              if target_container is None:
-                  print("ERROR: TARGET 55 EURO OFFER CONTAINER NOT FOUND")
-                  browser.close()
-                  raise SystemExit(1)
-
-              print()
-              print("=" * 80)
-              print("7. FIND ADD TO CART BUTTON")
-              print("=" * 80)
-
-              buttons = target_container.locator(
-                  "button, input[type='submit'], input[type='button'], a"
-              )
-
-              cart_button = None
-
-              for i in range(buttons.count()):
-                  try:
-                      button = buttons.nth(i)
-
-                      if not button.is_visible():
-                          continue
-
-                      text = clean(button.inner_text())
-
-                      value = clean(
-                          button.get_attribute("value")
-                      )
-
-                      aria = clean(
-                          button.get_attribute("aria-label")
-                      )
-
-                      combined = " | ".join(
-                          x for x in [text, value, aria]
-                          if x
+                      print()
+                      print(
+                          "CONTAINER",
+                          found_containers
                       )
 
                       print(
-                          "BUTTON:",
-                          repr(combined)
+                          text[:4000]
                       )
 
-                      if "Aggiungi al carrello" in combined:
-                          cart_button = button
+                      if found_containers >= 20:
                           break
 
                   except Exception:
                       pass
 
-              if cart_button is None:
-                  print("ERROR: ADD TO CART BUTTON NOT FOUND")
-                  browser.close()
-                  raise SystemExit(1)
+              if found_containers == 0:
 
-              print()
-              print("ADD TO CART BUTTON FOUND")
-              print(
-                  "BUTTON TEXT:",
-                  repr(clean(cart_button.inner_text()))
-              )
+                  print(
+                      "NO RELEVANT CONTAINERS FOUND"
+                  )
 
               print()
               print("=" * 80)
-              print("8. CLICK 55 EURO OFFER")
+              print("11. FIRST 15000 CHARACTERS OF PAGE")
               print("=" * 80)
-
-              cart_button.click()
-
-              offer_page.wait_for_timeout(5000)
-
-              print("URL AFTER CLICK:", offer_page.url)
-              print("TITLE AFTER CLICK:", offer_page.title())
-
-              print()
-              print("=" * 80)
-              print("9. CHECK CART RESULT")
-              print("=" * 80)
-
-              # Amazon may update the cart asynchronously.
-              # Inspect both the current page and the cart page.
-
-              current_body = clean(
-                  offer_page.locator("body").inner_text()
-              )
-
-              print("CURRENT PAGE CART REFERENCES:")
-
-              for keyword in [
-                  "Aggiunto al carrello",
-                  "Aggiunto al carrello.",
-                  "Nel carrello",
-                  "Carrello",
-                  "55,00",
-                  "giocagio",
-              ]:
-                  if keyword.lower() in current_body.lower():
-                      print(" FOUND:", repr(keyword))
-
-              cart_link = offer_page.locator(
-                  "a[href*='/gp/cart']"
-              ).first
-
-              print()
-              print(
-                  "CART LINK COUNT:",
-                  cart_link.count()
-              )
-
-              if cart_link.count() > 0:
-                  try:
-                      print(
-                          "CART LINK HREF:",
-                          cart_link.get_attribute("href")
-                      )
-                  except Exception:
-                      pass
-
-              print()
-              print("=" * 80)
-              print("10. OPEN CART")
-              print("=" * 80)
-
-              cart_page = context.new_page()
-
-              cart_response = cart_page.goto(
-                  "https://www.amazon.it/gp/cart/view.html",
-                  wait_until="domcontentloaded",
-                  timeout=60000,
-              )
 
               print(
-                  "CART HTTP:",
-                  cart_response.status
-                  if cart_response else "NONE"
-              )
-
-              print("CART URL:", cart_page.url)
-              print("CART TITLE:", cart_page.title())
-
-              cart_page.wait_for_timeout(5000)
-
-              cart_body = clean(
-                  cart_page.locator("body").inner_text()
+                  body[:15000]
               )
 
               print()
-              print("CART CONTENT:")
-
-              print(cart_body[:10000])
-
-              print()
               print("=" * 80)
-              print("11. FINAL RESULT")
+              print("12. FINAL")
               print("=" * 80)
 
-              product_present = (
-                  "B0H9HFPRRD" in cart_body
-                  or "set Allenatore Fuoriclasse 30° Anniversario"
-                  in cart_body
-              )
-
-              price_present = (
-                  "55,00" in cart_body
-              )
-
-              seller_present = (
-                  "giocagio" in cart_body.lower()
-              )
-
               print(
-                  "PRODUCT IN CART:",
-                  product_present
+                  "Diagnostic completed."
               )
-
-              print(
-                  "55 EURO IN CART:",
-                  price_present
-              )
-
-              print(
-                  "GIOCAGIO IN CART:",
-                  seller_present
-              )
-
-              if product_present:
-                  print()
-                  print("RESULT: OFFER WAS ACTUALLY ADDED TO CART")
-              else:
-                  print()
-                  print("RESULT: OFFER WAS NOT CONFIRMED IN CART")
 
               browser.close()
           PY
 
-          python amazon_cart_test.py
+          python amazon_diagnostic.py

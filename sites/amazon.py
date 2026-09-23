@@ -1,335 +1,287 @@
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+import re
+from playwright.async_api import async_playwright
 
 
-def check_stock(url: str) -> str:
+ASIN = "B0H9HFPRRD"
+PRODUCT_URL = f"https://www.amazon.it/dp/{ASIN}/"
+ZIP_CODE = "00100"
+
+
+async def set_delivery_location(page):
+    await page.goto("https://www.amazon.it/", wait_until="domcontentloaded", timeout=60000)
+    await page.wait_for_timeout(3000)
+
+    # Amazon può mostrare una pagina intermedia "Continua con gli acquisti"
+    if "Fai clic sul pulsante qui sotto per continuare" in await page.locator("body").inner_text():
+        buttons = page.get_by_text("Continua con gli acquisti", exact=True)
+
+        for i in range(await buttons.count()):
+            button = buttons.nth(i)
+            if await button.is_visible():
+                await button.click()
+                await page.wait_for_timeout(4000)
+                break
+
+    # Apri il popup della località
+    ingress = page.locator("#glow-ingress-block")
+
+    if await ingress.count() == 0:
+        return False
+
+    if not await ingress.is_visible():
+        return False
+
+    await ingress.click()
+    await page.wait_for_timeout(1500)
+
+    # Inserisci CAP italiano
+    zip_input = page.locator("#GLUXZipUpdateInput")
+
+    if await zip_input.count() == 0:
+        return False
+
+    await zip_input.fill(ZIP_CODE)
+
+    # Pulsante reale di conferma del CAP
+    confirm = page.locator("#GLUXZipInputSection input[type='submit']")
+
+    if await confirm.count() == 0:
+        return False
+
+    if not await confirm.is_visible():
+        return False
+
+    await confirm.click()
+    await page.wait_for_timeout(2000)
+
+    # Amazon mostra il CAP confermato nel popup
+    confirmed = page.locator("#GLUXZipConfirmationValue")
+
+    if await confirmed.count() == 0:
+        return False
+
+    if not await confirmed.is_visible():
+        return False
+
+    value = (await confirmed.inner_text()).strip()
+
+    if ZIP_CODE not in value:
+        return False
+
+    # Non è necessario chiudere il popup:
+    # la località viene comunque utilizzata quando apriamo il prodotto.
+    return True
+
+
+async def get_offer_listing(page):
+    await page.goto(PRODUCT_URL, wait_until="domcontentloaded", timeout=60000)
+    await page.wait_for_timeout(4000)
+
+    body = await page.locator("body").inner_text()
+
+    # Pagina intermedia/anomala
+    if "Fai clic sul pulsante qui sotto per continuare" in body:
+        return None
+
+    # Verifica che sia realmente il prodotto corretto
+    title = page.locator("#productTitle")
+
+    if await title.count() == 0:
+        return None
+
+    title_text = " ".join(await title.first.inner_text().split())
+
+    if ASIN not in page.url and "Pokémon" not in title_text:
+        return None
+
+    # Link "Visualizza tutte le opzioni di acquisto"
+    offer_link = page.locator(
+        "a[href*='/gp/offer-listing/'], "
+        "a[href*='offer-listing']"
+    )
+
+    for i in range(await offer_link.count()):
+        link = offer_link.nth(i)
+
+        if await link.is_visible():
+            href = await link.get_attribute("href")
+
+            if href:
+                if href.startswith("/"):
+                    href = "https://www.amazon.it" + href
+
+                return href
+
+    return None
+
+
+def extract_price(text):
     """
-    Controlla lo stato stock di un prodotto Amazon.
-
-    Restituisce esclusivamente:
-        AVAILABLE
-        OUT_OF_STOCK
-        UNKNOWN
-        ERROR
+    Estrae il primo prezzo in formato italiano.
+    Esempi:
+    114,90 €
+    55,00 €
     """
+    match = re.search(r"(\d{1,4}(?:\.\d{3})*,\d{2})\s*€", text)
+
+    if not match:
+        return None
+
+    value = match.group(1).replace(".", "").replace(",", ".")
 
     try:
-        with sync_playwright() as p:
+        return float(value)
+    except ValueError:
+        return None
 
-            browser = p.chromium.launch(
-                headless=True,
-                args=[
-                    "--no-sandbox",
-                    "--disable-dev-shm-usage",
-                ],
-            )
 
-            context = browser.new_context(
-                locale="it-IT",
-                timezone_id="Europe/Rome",
-                viewport={
-                    "width": 1440,
-                    "height": 1000,
-                },
-                user_agent=(
-                    "Mozilla/5.0 (X11; Linux x86_64) "
-                    "AppleWebKit/537.36 "
-                    "(KHTML, like Gecko) "
-                    "Chrome/131.0.0.0 Safari/537.36"
-                ),
-            )
+async def check_amazon():
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
 
-            page = context.new_page()
+        context = await browser.new_context(
+            locale="it-IT",
+            timezone_id="Europe/Rome",
+        )
 
-            page.goto(
-                url,
+        page = await context.new_page()
+
+        try:
+            print("=== AMAZON STOCK CHECK ===")
+            print(f"ASIN: {ASIN}")
+
+            # 1. Imposta CAP italiano
+            print("1. Impostazione località italiana...")
+
+            location_ok = await set_delivery_location(page)
+
+            if not location_ok:
+                print("UNKNOWN: impossibile impostare la località")
+                return "UNKNOWN", None
+
+            print(f"Località impostata: CAP {ZIP_CODE}")
+
+            # 2. Apri prodotto
+            print("2. Apertura prodotto...")
+
+            offer_url = await get_offer_listing(page)
+
+            if not offer_url:
+                print("UNKNOWN: pagina prodotto/offerte non disponibile")
+                return "UNKNOWN", None
+
+            print(f"Offer listing URL trovata:")
+            print(offer_url)
+
+            # 3. Apri lista offerte
+            print("3. Apertura lista offerte...")
+
+            await page.goto(
+                offer_url,
                 wait_until="domcontentloaded",
-                timeout=30000,
+                timeout=60000,
             )
 
-            page.wait_for_timeout(4000)
+            await page.wait_for_timeout(4000)
 
-            title = page.title().strip().lower()
+            body = await page.locator("body").inner_text()
 
-            body_text = (
-                page.locator("body")
-                .inner_text()
-                .strip()
-                .lower()
-            )
+            # CAPTCHA / pagina anomala
+            if "Fai clic sul pulsante qui sotto per continuare" in body:
+                print("UNKNOWN: pagina intermedia Amazon")
+                return "UNKNOWN", None
 
-            # ---------------------------------------------------------
-            # 1. Controlli anti-bot / CAPTCHA
-            # ---------------------------------------------------------
+            if "Robot Check" in body or "Inserisci i caratteri" in body:
+                print("UNKNOWN: Amazon ha richiesto una verifica")
+                return "UNKNOWN", None
 
-            anti_bot_markers = [
-                "captcha",
-                "robot check",
-                "enter the characters you see below",
-                "sorry, we just need to make sure you're not a robot",
-                "type the characters you see in this image",
-            ]
+            # 4. Leggi le offerte reali
+            offers = page.locator("div#aod-offer")
 
-            if any(
-                marker in title or marker in body_text
-                for marker in anti_bot_markers
-            ):
-                browser.close()
-                return "UNKNOWN"
+            count = await offers.count()
 
-            # ---------------------------------------------------------
-            # 2. Verifica che siamo realmente sulla pagina prodotto
-            # ---------------------------------------------------------
+            print(f"Offerte reali trovate: {count}")
 
-            asin = page.locator(
-                'input[name="ASIN"]'
-            ).first
+            if count == 0:
+                print("OUT_OF_STOCK: nessuna offerta")
+                return "OUT_OF_STOCK", None
 
-            asin_found = asin.count() > 0
+            purchasable_count = 0
+            minimum_price = None
 
-            product_title = page.locator(
-                "#productTitle"
-            ).first
+            for i in range(count):
+                offer = offers.nth(i)
 
-            product_title_found = product_title.count() > 0
+                if not await offer.is_visible():
+                    continue
 
-            if not asin_found and not product_title_found:
-                browser.close()
-                return "UNKNOWN"
+                text = " ".join((await offer.inner_text()).split())
 
-            if product_title_found:
-                product_title_text = (
-                    product_title.inner_text()
-                    .strip()
-                    .lower()
+                price = extract_price(text)
+
+                seller_locator = offer.locator("#aod-offer-soldBy")
+
+                seller = ""
+
+                if await seller_locator.count():
+                    seller = " ".join(
+                        (await seller_locator.first.inner_text()).split()
+                    )
+
+                # Il pulsante vero dell'offerta
+                cart_button = offer.locator(
+                    "span.aod-atc-generic-btn-desktop"
                 )
 
-                if not product_title_text:
-                    browser.close()
-                    return "UNKNOWN"
+                has_cart = False
 
-            # ---------------------------------------------------------
-            # 3. Controllo esplicito di indisponibilità
-            # ---------------------------------------------------------
+                for j in range(await cart_button.count()):
+                    button = cart_button.nth(j)
 
-            out_of_stock_markers = [
-                "currently unavailable",
-                "currently unavailable.",
-                "non disponibile",
-                "non disponibile.",
-                "prodotto non disponibile",
-                "temporaneamente non disponibile",
-                "esaurito",
-                "al momento non disponibile",
-            ]
+                    if await button.is_visible():
+                        has_cart = True
+                        break
 
-            if any(
-                marker in body_text
-                for marker in out_of_stock_markers
-            ):
-                browser.close()
-                return "OUT_OF_STOCK"
+                print(
+                    f"OFFERTA {i + 1}: "
+                    f"prezzo={price} "
+                    f"venditore={seller!r} "
+                    f"carrello={has_cart}"
+                )
 
-            # ---------------------------------------------------------
-            # 4. Controllo pulsanti di acquisto
-            # ---------------------------------------------------------
+                if price is not None:
+                    if minimum_price is None or price < minimum_price:
+                        minimum_price = price
 
-            purchase_selectors = [
-                "#add-to-cart-button",
-                "#buy-now-button",
-                "input[name='submit.add-to-cart']",
-                "input[name='submit.buy-now']",
-                "#add-to-cart-button-ubb",
-            ]
+                if has_cart:
+                    purchasable_count += 1
 
-            for selector in purchase_selectors:
+            print(f"Offerte acquistabili: {purchasable_count}")
 
-                buttons = page.locator(selector)
+            if minimum_price is not None:
+                print(f"Prezzo minimo: {minimum_price:.2f} EUR")
 
-                count = buttons.count()
+            if purchasable_count > 0:
+                print("AVAILABLE")
+                return "AVAILABLE", minimum_price
 
-                for i in range(count):
+            print("OUT_OF_STOCK")
+            return "OUT_OF_STOCK", minimum_price
 
-                    button = buttons.nth(i)
+        except Exception as e:
+            print(f"ERROR: {e}")
+            return "ERROR", None
 
-                    try:
-                        visible = button.is_visible()
-                    except Exception:
-                        continue
+        finally:
+            await browser.close()
 
-                    if not visible:
-                        continue
 
-                    try:
-                        disabled = button.is_disabled()
-                    except Exception:
-                        disabled = False
+if __name__ == "__main__":
+    import asyncio
 
-                    if disabled:
-                        continue
+    status, price = asyncio.run(check_amazon())
 
-                    try:
-                        aria_disabled = button.get_attribute(
-                            "aria-disabled"
-                        )
-                    except Exception:
-                        aria_disabled = None
-
-                    if aria_disabled == "true":
-                        continue
-
-                    try:
-                        text = (
-                            button.inner_text()
-                            .strip()
-                            .lower()
-                        )
-                    except Exception:
-                        text = ""
-
-                    try:
-                        value = (
-                            button.get_attribute("value")
-                            or ""
-                        ).strip().lower()
-                    except Exception:
-                        value = ""
-
-                    combined = f"{text} {value}"
-
-                    purchase_markers = [
-                        "add to cart",
-                        "aggiungi al carrello",
-                        "buy now",
-                        "acquista ora",
-                    ]
-
-                    if any(
-                        marker in combined
-                        for marker in purchase_markers
-                    ):
-                        browser.close()
-                        return "AVAILABLE"
-
-            # ---------------------------------------------------------
-            # 5. Alcune pagine Amazon mostrano l'offerta tramite
-            #    un contenitore con messaggi di acquisto.
-            # ---------------------------------------------------------
-
-            purchase_area_selectors = [
-                "#buybox",
-                "#buybox_feature_div",
-                "#buyBoxAccordion",
-                "#desktop_buybox",
-                "#rightCol",
-            ]
-
-            for selector in purchase_area_selectors:
-
-                area = page.locator(selector).first
-
-                if area.count() == 0:
-                    continue
-
-                try:
-                    if not area.is_visible():
-                        continue
-                except Exception:
-                    continue
-
-                try:
-                    area_text = (
-                        area.inner_text()
-                        .strip()
-                        .lower()
-                    )
-                except Exception:
-                    continue
-
-                if not area_text:
-                    continue
-
-                # Se l'area contiene chiaramente un'opzione
-                # acquistabile, controlliamo anche i suoi pulsanti.
-                area_buttons = area.locator("button, input")
-
-                for i in range(area_buttons.count()):
-
-                    button = area_buttons.nth(i)
-
-                    try:
-                        if not button.is_visible():
-                            continue
-                    except Exception:
-                        continue
-
-                    try:
-                        disabled = button.is_disabled()
-                    except Exception:
-                        disabled = False
-
-                    if disabled:
-                        continue
-
-                    try:
-                        text = (
-                            button.inner_text()
-                            .strip()
-                            .lower()
-                        )
-                    except Exception:
-                        text = ""
-
-                    try:
-                        value = (
-                            button.get_attribute("value")
-                            or ""
-                        ).strip().lower()
-                    except Exception:
-                        value = ""
-
-                    combined = f"{text} {value}"
-
-                    purchase_markers = [
-                        "add to cart",
-                        "aggiungi al carrello",
-                        "buy now",
-                        "acquista ora",
-                    ]
-
-                    if any(
-                        marker in combined
-                        for marker in purchase_markers
-                    ):
-                        browser.close()
-                        return "AVAILABLE"
-
-            # ---------------------------------------------------------
-            # 6. Se Amazon ci mostra chiaramente una condizione
-            #    di esaurimento, la consideriamo OUT_OF_STOCK.
-            # ---------------------------------------------------------
-
-            explicit_out_markers = [
-                "unavailable",
-                "non disponibile",
-                "esaurito",
-            ]
-
-            if any(
-                marker in body_text
-                for marker in explicit_out_markers
-            ):
-                browser.close()
-                return "OUT_OF_STOCK"
-
-            # ---------------------------------------------------------
-            # 7. Situazione non determinabile con sicurezza
-            # ---------------------------------------------------------
-
-            browser.close()
-            return "UNKNOWN"
-
-    except PlaywrightTimeoutError:
-        return "ERROR"
-
-    except Exception:
-        return "ERROR"
+    print("========================================")
+    print(f"STATUS: {status}")
+    print(f"MIN PRICE: {price}")
+    print("========================================")

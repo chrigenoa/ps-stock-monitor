@@ -16,10 +16,10 @@ async def set_delivery_location(page):
 
     await page.wait_for_timeout(3000)
 
-    # Amazon può mostrare una pagina intermedia
-    # "Continua con gli acquisti"
     body = await page.locator("body").inner_text()
 
+    # Amazon può mostrare una pagina intermedia
+    # "Continua con gli acquisti"
     if "Fai clic sul pulsante qui sotto per continuare" in body:
         buttons = page.get_by_text(
             "Continua con gli acquisti",
@@ -71,7 +71,7 @@ async def set_delivery_location(page):
     await confirm.click()
     await page.wait_for_timeout(2000)
 
-    # Amazon mostra il CAP confermato nel popup
+    # Amazon mostra il CAP confermato
     confirmed = page.locator("#GLUXZipConfirmationValue")
 
     if await confirmed.count() == 0:
@@ -164,6 +164,36 @@ def extract_price(text):
         return float(value)
     except ValueError:
         return None
+
+
+def is_amazon_seller(seller_text):
+    """
+    Restituisce True solo quando il testo identifica
+    esplicitamente Amazon come venditore.
+
+    NON considera sufficiente:
+    - Spedito da Amazon
+    - Logistica di Amazon
+    - Prime
+
+    perché anche un venditore terzo può utilizzare
+    la logistica Amazon.
+    """
+
+    text = " ".join(seller_text.split()).lower()
+
+    amazon_patterns = [
+        "venduto da amazon.it",
+        "venditore amazon.it",
+        "venduto da amazon",
+        "venditore amazon",
+    ]
+
+    for pattern in amazon_patterns:
+        if pattern in text:
+            return True
+
+    return False
 
 
 async def check_amazon():
@@ -281,8 +311,8 @@ async def check_amazon():
 
                 return "OUT_OF_STOCK", None
 
-            purchasable_count = 0
-            minimum_price = None
+            amazon_available = False
+            amazon_price = None
 
             # -------------------------------------------------
             # 5. ANALIZZA OGNI OFFERTA
@@ -332,60 +362,69 @@ async def check_amazon():
                     button = cart_button.nth(j)
 
                     if await button.is_visible():
-
                         has_cart = True
                         break
+
+                seller_is_amazon = is_amazon_seller(
+                    seller
+                )
 
                 print(
                     f"OFFERTA {i + 1}: "
                     f"prezzo={price} "
                     f"venditore={seller!r} "
+                    f"amazon={seller_is_amazon} "
                     f"carrello={has_cart}"
                 )
 
-                # Prezzo minimo
-                if price is not None:
+                # -------------------------------------------------
+                # SOLO AMAZON PUÒ PRODURRE AVAILABLE
+                # -------------------------------------------------
 
-                    if (
-                        minimum_price is None
-                        or price < minimum_price
-                    ):
-                        minimum_price = price
+                if seller_is_amazon and has_cart:
 
-                # Offerta realmente acquistabile
-                if has_cart:
-                    purchasable_count += 1
+                    amazon_available = True
+
+                    if price is not None:
+                        amazon_price = price
+
+                    print(
+                        ">>> OFFERTA AMAZON "
+                        "ACQUISTABILE <<<"
+                    )
 
             # -------------------------------------------------
             # 6. RISULTATO
             # -------------------------------------------------
 
-            print(
-                f"Offerte acquistabili: "
-                f"{purchasable_count}"
-            )
-
-            if minimum_price is not None:
+            if amazon_available:
 
                 print(
-                    f"Prezzo minimo: "
-                    f"{minimum_price:.2f} EUR"
+                    "AVAILABLE: Amazon vende "
+                    "direttamente il prodotto"
                 )
 
-            if purchasable_count > 0:
-
-                print("AVAILABLE")
+                if amazon_price is not None:
+                    print(
+                        f"Prezzo Amazon: "
+                        f"{amazon_price:.2f} EUR"
+                    )
 
                 return (
                     "AVAILABLE",
-                    minimum_price,
+                    amazon_price,
                 )
 
-            print("OUT_OF_STOCK")
+            # Ci sono eventualmente offerte di terzi,
+            # ma nessuna offerta Amazon acquistabile.
+            print(
+                "OUT_OF_STOCK: nessuna offerta "
+                "Amazon direttamente acquistabile"
+            )
 
             return (
                 "OUT_OF_STOCK",
-                minimum_price,
+                None,
             )
 
         except Exception as e:
@@ -409,5 +448,5 @@ if __name__ == "__main__":
 
     print("========================================")
     print(f"STATUS: {status}")
-    print(f"MIN PRICE: {price}")
+    print(f"AMAZON PRICE: {price}")
     print("========================================")

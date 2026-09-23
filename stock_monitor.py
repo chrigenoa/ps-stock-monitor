@@ -1,54 +1,65 @@
 import json
 import os
-import sys
-from datetime import datetime, timezone
-
 import requests
+import asyncio
 
-from sites.playstation_direct import check_stock as check_playstation_direct
-from sites.shopify import check_stock as check_shopify
+from sites.playstation_direct import check_playstation_direct
+from sites.shopify import check_shopify
+from sites.amazon import check_amazon
+
+
+STATE_FILE = "stock_state.json"
 
 
 PRODUCTS = {
-    "wolverine_battle_yellow_covers": {
-        "name": "Wolverine Battle Yellow PS5 Pro Console Covers",
+    "wolverine_covers": {
+        "name": "Cover PS5 Pro Wolverine Battle Yellow Limited Edition",
         "site": "playstation_direct",
         "url": "https://direct.playstation.com/it-it/buy-accessories/playstation5-pro-console-covers-marvels-wolverine-battle-yellow-limited-edition",
     },
+
     "ps5_pro": {
         "name": "PlayStation 5 Pro",
         "site": "playstation_direct",
         "url": "https://direct.playstation.com/it-it/buy-consoles/playstation5-pro-console",
     },
-    "wolverine_battle_yellow_controller": {
-        "name": "DualSense Wolverine Battle Yellow",
+
+    "wolverine_controller": {
+        "name": "DualSense Wolverine Battle Yellow Limited Edition",
         "site": "playstation_direct",
         "url": "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-marvels-wolverine-battle-yellow-limited-edition-for-ps5-pc-mac-mobile",
     },
+
     "gta_vi_black_controller": {
-        "name": "DualSense GTA VI Black",
+        "name": "DualSense GTA VI Black Limited Edition",
         "site": "playstation_direct",
         "url": "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-grand-theft-auto-vi-black-limited-edition-for-ps5-pc-mac-mobile",
     },
+
     "gta_vi_white_controller": {
-        "name": "DualSense GTA VI White",
+        "name": "DualSense GTA VI White Limited Edition",
         "site": "playstation_direct",
         "url": "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-grand-theft-auto-vi-white-limited-edition-for-ps5-pc-mac-mobile",
     },
+
     "wolverine_adamantium_controller": {
-        "name": "DualSense Wolverine Adamantium",
+        "name": "DualSense Wolverine Adamantium Limited Edition",
         "site": "playstation_direct",
         "url": "https://direct.playstation.com/it-it/buy-accessories/dualsense-wireless-controller-marvels-wolverine-adamantium-limited-edition-for-ps5-pc-mac-mobile",
     },
+
     "gta_vi_album_vinyl": {
         "name": "GTA VI The Album - Limited-Edition Vinyl",
         "site": "shopify",
         "url": "https://www.gtavi-thealbum.com/en-eu/products/grand-theft-auto-vi-the-album-limited-edition-vinyl",
     },
+
+    "pokemon_30th_anniversary": {
+        "name": "Pokémon Set Allenatore Fuoriclasse 30° Anniversario",
+        "site": "amazon",
+        "url": "https://www.amazon.it/dp/B0H9HFPRRD/",
+    },
 }
-
-
-STATE_FILE = "stock_state.json"
 
 
 def load_state():
@@ -72,141 +83,203 @@ def save_state(state):
         )
 
 
-def send_telegram(notifications):
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+def send_telegram(message):
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
 
     if not token or not chat_id:
-        print("Telegram credentials not configured.")
+        print("Telegram secrets non configurati.")
         return False
 
-    telegram_url = f"https://api.telegram.org/bot{token}/sendMessage"
+    url = (
+        f"https://api.telegram.org/bot{token}/sendMessage"
+    )
 
-    success = True
+    payload = {
+        "chat_id": chat_id,
+        "text": message,
+    }
 
-    for item in notifications:
-        message = (
-            "🟢 DISPONIBILE\n\n"
-            f"{item['name']}\n\n"
-            f"{item['url']}"
+    try:
+        response = requests.post(
+            url,
+            json=payload,
+            timeout=30,
         )
 
-        try:
-            response = requests.post(
-                telegram_url,
-                data={
-                    "chat_id": chat_id,
-                    "text": message,
-                },
-                timeout=20,
-            )
+        print(
+            f"Telegram HTTP {response.status_code}: "
+            f"{response.text}"
+        )
 
-            print(f"Telegram HTTP: {response.status_code}")
-            print(f"Telegram response: {response.text}")
+        return response.ok
 
-            if not response.ok:
-                success = False
-
-        except Exception as e:
-            print(f"Telegram error: {e}")
-            success = False
-
-    return success
+    except Exception as e:
+        print(f"Errore Telegram: {e}")
+        return False
 
 
 def check_product(product):
-    site = product.get("site")
-    url = product["url"]
+    site = product["site"]
 
     if site == "playstation_direct":
-        return check_playstation_direct(url)
+        return check_playstation_direct(
+            product["url"]
+        )
 
     if site == "shopify":
-        return check_shopify(url)
+        return check_shopify(
+            product["url"]
+        )
 
-    print(f"Unknown site adapter: {site}")
-    return "UNKNOWN"
+    if site == "amazon":
+        return asyncio.run(
+            check_amazon()
+        )
+
+    print(f"Sito non supportato: {site}")
+    return "ERROR", None
 
 
 def main():
+    print("========================================")
+    print("FULL STOCK MONITOR")
+    print("========================================")
+
     state = load_state()
-    now = datetime.now(timezone.utc).isoformat()
-
-    print("=" * 80)
-    print("PLAYSTATION / SHOPIFY STOCK MONITOR")
-    print("=" * 80)
-    print()
-
-    notifications = []
 
     for product_id, product in PRODUCTS.items():
-        print(f"Checking: {product['name']}")
-        print(f"  Site: {product['site']}")
-
-        status = check_product(product)
-        previous = state.get(product_id, {}).get("status")
-
-        print(f"  Previous: {previous}")
-        print(f"  Current:  {status}")
-
-        if status == "AVAILABLE" and previous != "AVAILABLE":
-            notifications.append(
-                {
-                    "id": product_id,
-                    "name": product["name"],
-                    "url": product["url"],
-                }
-            )
-
-        if status in ("AVAILABLE", "OUT_OF_STOCK"):
-            state[product_id] = {
-                "status": status,
-                "last_check": now,
-                "last_result": status,
-            }
-        else:
-            previous_data = state.get(product_id, {})
-
-            state[product_id] = {
-                "status": previous_data.get("status"),
-                "last_check": now,
-                "last_result": status,
-            }
 
         print()
+        print("----------------------------------------")
+        print(f"PRODUCT: {product['name']}")
+        print(f"SITE: {product['site']}")
+        print("----------------------------------------")
+
+        try:
+            result = check_product(product)
+
+            # I parser restituiscono normalmente:
+            # (status, eventuale prezzo)
+            if isinstance(result, tuple):
+                status = result[0]
+                price = (
+                    result[1]
+                    if len(result) > 1
+                    else None
+                )
+            else:
+                status = result
+                price = None
+
+        except Exception as e:
+            print(
+                f"Errore durante il controllo "
+                f"{product_id}: {e}"
+            )
+
+            status = "ERROR"
+            price = None
+
+        previous_status = state.get(
+            product_id,
+            "UNKNOWN",
+        )
+
+        print(f"Previous status: {previous_status}")
+        print(f"Current status: {status}")
+
+        if price is not None:
+            print(
+                f"Current price: {price:.2f} EUR"
+            )
+
+        # -------------------------------------------------
+        # AVAILABLE
+        # -------------------------------------------------
+
+        if status == "AVAILABLE":
+
+            # Notifica solamente quando passa
+            # da uno stato diverso da AVAILABLE
+            # a AVAILABLE.
+            if previous_status != "AVAILABLE":
+
+                message = (
+                    "🟢 DISPONIBILE!\n\n"
+                    f"{product['name']}\n"
+                    f"{product['url']}"
+                )
+
+                if price is not None:
+                    message += (
+                        f"\n\n💰 Prezzo: "
+                        f"{price:.2f} €"
+                    )
+
+                print(
+                    "Invio notifica Telegram..."
+                )
+
+                send_telegram(message)
+
+            else:
+                print(
+                    "Già AVAILABLE: nessuna "
+                    "notifica Telegram."
+                )
+
+            # Salviamo AVAILABLE
+            state[product_id] = "AVAILABLE"
+
+        # -------------------------------------------------
+        # OUT OF STOCK
+        # -------------------------------------------------
+
+        elif status == "OUT_OF_STOCK":
+
+            state[product_id] = "OUT_OF_STOCK"
+
+            print(
+                "OUT_OF_STOCK salvato nello stato."
+            )
+
+        # -------------------------------------------------
+        # UNKNOWN / ERROR
+        # -------------------------------------------------
+
+        elif status in ("UNKNOWN", "ERROR"):
+
+            # IMPORTANTISSIMO:
+            # non sovrascriviamo uno stato valido
+            # con UNKNOWN o ERROR.
+            print(
+                f"{status}: mantengo lo stato "
+                f"precedente ({previous_status})."
+            )
+
+        else:
+
+            print(
+                f"Stato sconosciuto: {status}. "
+                f"Non modifico lo stato precedente."
+            )
 
     save_state(state)
 
-    print("=" * 80)
-    print("SUMMARY")
-    print("=" * 80)
-
-    if notifications:
-        print()
-        print("NEW AVAILABLE PRODUCTS:")
-
-        for item in notifications:
-            print(f"- {item['name']}")
-            print(f"  {item['url']}")
-
-        print()
-        print("Sending Telegram notifications...")
-
-        telegram_ok = send_telegram(notifications)
-
-        if telegram_ok:
-            print("Telegram notifications sent successfully.")
-        else:
-            print("Telegram notification failed.")
-
-    else:
-        print("No new availability detected.")
-
     print()
-    print("=" * 80)
+    print("========================================")
+    print("STOCK STATE FINALE")
+    print("========================================")
 
-    return 0
+    print(
+        json.dumps(
+            state,
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

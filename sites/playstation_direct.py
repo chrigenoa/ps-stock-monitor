@@ -1,7 +1,7 @@
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 
-def check_stock(url: str) -> str:
+def check_playstation_direct(url: str) -> str:
     """
     Controlla lo stato stock di un prodotto PlayStation Direct.
 
@@ -56,11 +56,7 @@ def check_stock(url: str) -> str:
                 browser.close()
                 return "UNKNOWN"
 
-            # IMPORTANTE:
-            # usiamo SOLO i pulsanti add-to-cart del prodotto principale.
-            #
-            # I prodotti correlati usano classi differenti, ad esempio
-            # js-add-to-cart.
+            # Usiamo SOLO i pulsanti add-to-cart del prodotto principale.
             buttons = hero.locator("button.add-to-cart")
 
             count = buttons.count()
@@ -90,7 +86,7 @@ def check_stock(url: str) -> str:
                         browser.close()
                         return "AVAILABLE"
 
-            # Esiste il pulsante principale ma non è visibile:
+            # Esiste il pulsante principale ma non è utilizzabile:
             # nello stato attuale del sito significa prodotto non disponibile.
             browser.close()
             return "OUT_OF_STOCK"

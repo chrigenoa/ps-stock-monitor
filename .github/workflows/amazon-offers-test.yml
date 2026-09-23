@@ -1,10 +1,10 @@
-name: Amazon Offers Diagnostic
+name: Amazon Offer Structure Test
 
 on:
   workflow_dispatch:
 
 jobs:
-  amazon-diagnostic:
+  amazon-offer-structure:
     runs-on: ubuntu-latest
 
     steps:
@@ -16,15 +16,15 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install dependencies
+      - name: Install Playwright
         run: |
           python -m pip install --upgrade pip
           pip install playwright
           playwright install --with-deps chromium
 
-      - name: Diagnose Amazon offers
+      - name: Analyze Amazon offers
         run: |
-          cat > amazon_diagnostic.py <<'PY'
+          cat > amazon_offer_structure.py <<'PY'
           from playwright.sync_api import sync_playwright
           import re
 
@@ -33,38 +33,6 @@ jobs:
 
           def clean(text):
               return re.sub(r"\s+", " ", text or "").strip()
-
-          def print_matches(body, keyword):
-              print()
-              print("-" * 80)
-              print("KEYWORD:", repr(keyword))
-              print("-" * 80)
-
-              found = False
-
-              for i, line in enumerate(body.splitlines()):
-                  line_clean = clean(line)
-
-                  if keyword.lower() in line_clean.lower():
-                      found = True
-
-                      print()
-                      print("MATCH:", repr(line_clean[:2000]))
-
-                      # Print nearby lines too
-                      lines = body.splitlines()
-                      start = max(0, i - 3)
-                      end = min(len(lines), i + 4)
-
-                      print("CONTEXT:")
-                      for context_line in lines[start:end]:
-                          context_clean = clean(context_line)
-
-                          if context_clean:
-                              print(" ", context_clean[:2000])
-
-              if not found:
-                  print("NOT FOUND")
 
           with sync_playwright() as p:
 
@@ -76,7 +44,7 @@ jobs:
                   viewport={
                       "width": 1440,
                       "height": 1000
-                  },
+                  }
               )
 
               page = context.new_page()
@@ -88,7 +56,7 @@ jobs:
               response = page.goto(
                   "https://www.amazon.it/",
                   wait_until="domcontentloaded",
-                  timeout=60000,
+                  timeout=60000
               )
 
               print(
@@ -101,45 +69,46 @@ jobs:
 
               page.wait_for_timeout(3000)
 
+              # Handle Amazon intermediate "Continua con gli acquisti"
               continue_buttons = page.get_by_text(
                   "Continua con gli acquisti",
                   exact=True
               )
 
-              if continue_buttons.count() > 0:
+              print(
+                  "CONTINUE BUTTONS:",
+                  continue_buttons.count()
+              )
 
-                  print(
-                      "CONTINUE BUTTONS:",
-                      continue_buttons.count()
-                  )
+              for i in range(continue_buttons.count()):
 
-                  for i in range(continue_buttons.count()):
+                  try:
 
-                      try:
-                          button = continue_buttons.nth(i)
+                      button = continue_buttons.nth(i)
 
-                          if button.is_visible():
+                      if button.is_visible():
 
-                              print(
-                                  "CLICKING CONTINUE BUTTON:",
-                                  i
-                              )
-
-                              button.click()
-
-                              page.wait_for_timeout(5000)
-
-                              break
-
-                      except Exception as e:
                           print(
-                              "CONTINUE CLICK ERROR:",
-                              repr(e)
+                              "CLICK CONTINUE:",
+                              i
                           )
+
+                          button.click()
+
+                          page.wait_for_timeout(5000)
+
+                          break
+
+                  except Exception as e:
+
+                      print(
+                          "CONTINUE ERROR:",
+                          repr(e)
+                      )
 
               print()
               print("=" * 80)
-              print("2. SET DELIVERY ZIP")
+              print("2. SET ITALIAN DELIVERY ZIP")
               print("=" * 80)
 
               ingress = page.locator(
@@ -147,12 +116,16 @@ jobs:
               )
 
               print(
-                  "DELIVERY BLOCK COUNT:",
+                  "DELIVERY BLOCK:",
                   ingress.count()
               )
 
               if ingress.count() == 0:
-                  print("ERROR: DELIVERY BLOCK NOT FOUND")
+
+                  print(
+                      "ERROR: delivery block not found"
+                  )
+
                   browser.close()
                   raise SystemExit(1)
 
@@ -174,45 +147,38 @@ jobs:
               )
 
               print(
-                  "ZIP INPUT COUNT:",
+                  "ZIP INPUT:",
                   zip_input.count()
               )
 
               if zip_input.count() == 0:
-                  print("ERROR: ZIP INPUT NOT FOUND")
+
+                  print(
+                      "ERROR: ZIP input not found"
+                  )
+
                   browser.close()
                   raise SystemExit(1)
 
               zip_input.fill(ZIP_CODE)
-
-              print(
-                  "ZIP FILLED:",
-                  ZIP_CODE
-              )
 
               confirm = page.locator(
                   "#GLUXZipInputSection input[type='submit']"
               )
 
               print(
-                  "ZIP CONFIRM COUNT:",
+                  "ZIP CONFIRM:",
                   confirm.count()
               )
 
               if confirm.count() == 0:
-                  print("ERROR: ZIP CONFIRM NOT FOUND")
+
+                  print(
+                      "ERROR: ZIP confirm not found"
+                  )
+
                   browser.close()
                   raise SystemExit(1)
-
-              print(
-                  "ZIP CONFIRM VISIBLE:",
-                  confirm.first.is_visible()
-              )
-
-              print(
-                  "ZIP CONFIRM DISABLED:",
-                  confirm.first.is_disabled()
-              )
 
               confirm.first.click()
 
@@ -220,11 +186,6 @@ jobs:
 
               confirmation = page.locator(
                   "#GLUXZipConfirmationValue"
-              )
-
-              print(
-                  "CONFIRMATION COUNT:",
-                  confirmation.count()
               )
 
               if confirmation.count() > 0:
@@ -246,7 +207,7 @@ jobs:
               page.goto(
                   PRODUCT_URL,
                   wait_until="domcontentloaded",
-                  timeout=60000,
+                  timeout=60000
               )
 
               page.wait_for_timeout(5000)
@@ -257,25 +218,20 @@ jobs:
               )
 
               print(
-                  "PRODUCT TITLE PAGE:",
+                  "PRODUCT TITLE:",
                   page.title()
               )
 
-              product_title = page.locator(
+              title = page.locator(
                   "#productTitle"
               )
 
-              print(
-                  "PRODUCT TITLE COUNT:",
-                  product_title.count()
-              )
-
-              if product_title.count() > 0:
+              if title.count() > 0:
 
                   print(
                       "PRODUCT:",
                       clean(
-                          product_title.first.inner_text()
+                          title.first.inner_text()
                       )
                   )
 
@@ -283,15 +239,10 @@ jobs:
                   "#glow-ingress-block"
               )
 
-              print(
-                  "DELIVERY BLOCK COUNT:",
-                  delivery.count()
-              )
-
               if delivery.count() > 0:
 
                   print(
-                      "DELIVERY ON PRODUCT:",
+                      "DELIVERY:",
                       repr(
                           clean(
                               delivery.first.inner_text()
@@ -301,7 +252,7 @@ jobs:
 
               print()
               print("=" * 80)
-              print("4. FIND PURCHASE OPTIONS LINK")
+              print("4. FIND OFFER-LISTING LINK")
               print("=" * 80)
 
               offer_links = page.locator(
@@ -309,60 +260,29 @@ jobs:
               )
 
               print(
-                  "OFFER LINK COUNT:",
+                  "OFFER LINKS:",
                   offer_links.count()
               )
 
               if offer_links.count() == 0:
 
                   print(
-                      "ERROR: OFFER LINK NOT FOUND"
+                      "ERROR: offer-listing link not found"
                   )
 
                   browser.close()
                   raise SystemExit(1)
-
-              for i in range(offer_links.count()):
-
-                  try:
-
-                      print()
-                      print(
-                          "OFFER LINK",
-                          i
-                      )
-
-                      print(
-                          "TEXT:",
-                          repr(
-                              clean(
-                                  offer_links.nth(i).inner_text()
-                              )
-                          )
-                      )
-
-                      print(
-                          "HREF:",
-                          offer_links.nth(i).get_attribute(
-                              "href"
-                          )
-                      )
-
-                  except Exception:
-                      pass
 
               href = offer_links.first.get_attribute(
                   "href"
               )
 
               offer_url = (
-                  "https://www.amazon.it"
-                  + href
+                  "https://www.amazon.it" + href
                   if href.startswith("/")
                   else href
               )
 
-              print()
               print(
                   "OFFER URL:",
                   offer_url
@@ -373,195 +293,411 @@ jobs:
               print("5. OPEN OFFER PAGE")
               print("=" * 80)
 
-              offer_page = context.new_page()
+              offers = context.new_page()
 
-              offer_response = offer_page.goto(
+              response = offers.goto(
                   offer_url,
                   wait_until="domcontentloaded",
-                  timeout=60000,
+                  timeout=60000
               )
 
               print(
                   "HTTP:",
-                  offer_response.status
-                  if offer_response
-                  else "NONE"
+                  response.status if response else "NONE"
               )
 
               print(
                   "FINAL URL:",
-                  offer_page.url
+                  offers.url
               )
 
               print(
                   "TITLE:",
-                  offer_page.title()
+                  offers.title()
               )
 
-              offer_page.wait_for_timeout(5000)
+              offers.wait_for_timeout(5000)
 
-              body = offer_page.locator(
+              body = offers.locator(
                   "body"
               ).inner_text()
-
-              print()
-              print("=" * 80)
-              print("6. BASIC OFFER PAGE INFORMATION")
-              print("=" * 80)
 
               print(
                   "BODY LENGTH:",
                   len(body)
               )
 
-              print(
-                  "DELIVERY BLOCK COUNT:",
-                  offer_page.locator(
-                      "#glow-ingress-block"
-                  ).count()
-              )
-
-              delivery_offer = offer_page.locator(
-                  "#glow-ingress-block"
-              )
-
-              if delivery_offer.count() > 0:
-
-                  print(
-                      "DELIVERY:",
-                      repr(
-                          clean(
-                              delivery_offer.first.inner_text()
-                          )
-                      )
-                  )
-
-              print()
-              print(
-                  "PRODUCT TITLE COUNT:",
-                  offer_page.locator(
-                      "#productTitle"
-                  ).count()
-              )
-
-              print(
-                  "BUYBOX COUNT:",
-                  offer_page.locator(
-                      "#buybox"
-                  ).count()
-              )
-
               print()
               print("=" * 80)
-              print("7. SEARCH 55 EURO")
+              print("6. OFFER-RELATED ELEMENTS")
               print("=" * 80)
 
-              print_matches(
-                  body,
-                  "55"
-              )
-
-              print_matches(
-                  body,
-                  "55,00"
-              )
-
-              print_matches(
-                  body,
-                  "55,00€"
-              )
-
-              print_matches(
-                  body,
-                  "EUR 55"
-              )
-
-              print()
-              print("=" * 80)
-              print("8. SEARCH PURCHASE WORDS")
-              print("=" * 80)
-
-              for keyword in [
-                  "Aggiungi al carrello",
-                  "Acquista ora",
-                  "Disponibile",
-                  "Disponibilità",
-                  "giocagio",
-                  "Venditore",
-                  "Speditore",
-                  "Opzioni di acquisto",
-                  "6 opzioni",
-                  "7 opzioni",
-              ]:
-
-                  print_matches(
-                      body,
-                      keyword
-                  )
-
-              print()
-              print("=" * 80)
-              print("9. ALL PRICE-LIKE TEXT")
-              print("=" * 80)
-
-              price_patterns = [
-                  r"\d{1,4},\d{2}\s*€",
-                  r"€\s*\d{1,4},\d{2}",
-                  r"EUR\s*\d{1,4}(?:,\d{2})?",
+              # Amazon offer pages commonly use these classes/attributes.
+              selectors = [
+                  "[id*='aod-offer']",
+                  "[id*='aod-offer-heading']",
+                  "[id*='aod-offer-price']",
+                  "[id*='aod-offer-soldBy']",
+                  "[id*='aod-offer-shipsFrom']",
+                  "[id*='aod-offer-qty']",
+                  "[id*='aod-offer-add-to-cart']",
+                  "[class*='aod-information-block']",
+                  "[class*='aod-offer']",
+                  "[data-aod-atc-action]"
               ]
 
-              price_seen = set()
+              for selector in selectors:
 
-              for pattern in price_patterns:
+                  try:
 
-                  matches = re.findall(
-                      pattern,
-                      body,
-                      flags=re.IGNORECASE
-                  )
+                      count = offers.locator(
+                          selector
+                      ).count()
 
-                  for match in matches:
+                      print(
+                          selector,
+                          "=>",
+                          count
+                      )
 
-                      match_clean = clean(match)
+                  except Exception as e:
 
-                      if match_clean not in price_seen:
-
-                          price_seen.add(
-                              match_clean
-                          )
-
-                          print(
-                              "PRICE:",
-                              repr(match_clean)
-                          )
-
-              if not price_seen:
-
-                  print(
-                      "NO PRICE-LIKE TEXT FOUND"
-                  )
+                      print(
+                          selector,
+                          "=> ERROR",
+                          repr(e)
+                      )
 
               print()
               print("=" * 80)
-              print("10. GIOCAGIO CONTAINERS")
+              print("7. POSSIBLE OFFER CONTAINERS")
               print("=" * 80)
 
-              containers = offer_page.locator(
-                  "div, article, li"
+              # Try to identify the actual offer blocks.
+              offer_selectors = [
+                  "[id^='aod-offer']",
+                  "div[id*='aod-offer']",
+                  "div[class*='aod-offer']",
+                  "div[data-aod-atc-action]"
+              ]
+
+              found = []
+
+              for selector in offer_selectors:
+
+                  try:
+
+                      elements = offers.locator(
+                          selector
+                      )
+
+                      count = elements.count()
+
+                      print()
+                      print(
+                          "SELECTOR:",
+                          selector,
+                          "COUNT:",
+                          count
+                      )
+
+                      for i in range(
+                          min(count, 50)
+                      ):
+
+                          try:
+
+                              element = elements.nth(i)
+
+                              if not element.is_visible():
+                                  continue
+
+                              text = clean(
+                                  element.inner_text()
+                              )
+
+                              if not text:
+                                  continue
+
+                              # Avoid printing the same huge parent repeatedly.
+                              if len(text) > 6000:
+                                  text = text[:6000] + "..."
+
+                              print()
+                              print(
+                                  "--- ELEMENT",
+                                  i,
+                                  "---"
+                              )
+
+                              print(text)
+
+                              # Print useful attributes.
+                              for attr in [
+                                  "id",
+                                  "class",
+                                  "data-aod-atc-action",
+                                  "data-csa-c-item-id",
+                                  "data-csa-c-type"
+                              ]:
+
+                                  try:
+
+                                      value = element.get_attribute(
+                                          attr
+                                      )
+
+                                      if value:
+
+                                          print(
+                                              attr + ":",
+                                              repr(value)
+                                          )
+
+                                  except Exception:
+                                      pass
+
+                          except Exception:
+                              pass
+
+                  except Exception as e:
+
+                      print(
+                          "SELECTOR ERROR:",
+                          repr(e)
+                      )
+
+              print()
+              print("=" * 80)
+              print("8. ELEMENTS WITH 'Aggiungi al carrello'")
+              print("=" * 80)
+
+              buttons = offers.get_by_text(
+                  "Aggiungi al carrello",
+                  exact=True
               )
 
-              found_containers = 0
+              print(
+                  "ADD TO CART TEXT COUNT:",
+                  buttons.count()
+              )
 
               for i in range(
-                  min(
-                      containers.count(),
-                      4000
-                  )
+                  min(buttons.count(), 30)
               ):
 
                   try:
 
-                      element = containers.nth(i)
+                      button = buttons.nth(i)
+
+                      print()
+                      print(
+                          "--- BUTTON",
+                          i,
+                          "---"
+                      )
+
+                      print(
+                          "VISIBLE:",
+                          button.is_visible()
+                      )
+
+                      print(
+                          "TAG:",
+                          button.evaluate(
+                              "(e) => e.tagName"
+                          )
+                      )
+
+                      print(
+                          "TEXT:",
+                          repr(
+                              clean(
+                                  button.inner_text()
+                              )
+                          )
+                      )
+
+                      print(
+                          "ID:",
+                          repr(
+                              button.get_attribute("id")
+                          )
+                      )
+
+                      print(
+                          "CLASS:",
+                          repr(
+                              button.get_attribute("class")
+                          )
+                      )
+
+                      print(
+                          "NAME:",
+                          repr(
+                              button.get_attribute("name")
+                          )
+                      )
+
+                      print(
+                          "DATA ACTION:",
+                          repr(
+                              button.get_attribute(
+                                  "data-aod-atc-action"
+                              )
+                          )
+                      )
+
+                      # Walk up the DOM and print parent texts.
+                      parent_info = button.evaluate(
+                          """
+                          (e) => {
+                              const result = [];
+                              let node = e;
+
+                              for (let i = 0; i < 6 && node; i++, node = node.parentElement) {
+                                  result.push({
+                                      tag: node.tagName,
+                                      id: node.id || "",
+                                      cls: node.className || "",
+                                      text: (node.innerText || "").replace(/\\s+/g, " ").trim().slice(0, 2500)
+                                  });
+                              }
+
+                              return result;
+                          }
+                          """
+                      )
+
+                      print(
+                          "PARENT CHAIN:"
+                      )
+
+                      for parent in parent_info:
+
+                          print(
+                              "TAG:",
+                              parent["tag"],
+                              "ID:",
+                              repr(parent["id"]),
+                              "CLASS:",
+                              repr(parent["cls"])
+                          )
+
+                          print(
+                              "TEXT:",
+                              parent["text"]
+                          )
+
+                          print()
+
+                  except Exception as e:
+
+                      print(
+                          "BUTTON ERROR:",
+                          repr(e)
+                      )
+
+              print()
+              print("=" * 80)
+              print("9. PRICE ELEMENTS")
+              print("=" * 80)
+
+              price_selectors = [
+                  ".a-price",
+                  ".a-offscreen",
+                  "[class*='a-price']",
+                  "[id*='price']",
+                  "[class*='price']"
+              ]
+
+              seen = set()
+
+              for selector in price_selectors:
+
+                  try:
+
+                      elements = offers.locator(
+                          selector
+                      )
+
+                      count = elements.count()
+
+                      print()
+                      print(
+                          "SELECTOR:",
+                          selector,
+                          "COUNT:",
+                          count
+                      )
+
+                      for i in range(
+                          min(count, 100)
+                      ):
+
+                          try:
+
+                              element = elements.nth(i)
+
+                              if not element.is_visible():
+                                  continue
+
+                              text = clean(
+                                  element.inner_text()
+                              )
+
+                              if not text:
+                                  continue
+
+                              key = (
+                                  selector,
+                                  text
+                              )
+
+                              if key in seen:
+                                  continue
+
+                              seen.add(key)
+
+                              print(
+                                  "PRICE ELEMENT:",
+                                  repr(
+                                      text[:500]
+                                  )
+                              )
+
+                          except Exception:
+                              pass
+
+                  except Exception:
+                      pass
+
+              print()
+              print("=" * 80)
+              print("10. OFFER IDs / DATA ATTRIBUTES")
+              print("=" * 80)
+
+              all_elements = offers.locator(
+                  "[id]"
+              )
+
+              printed = 0
+
+              for i in range(
+                  min(all_elements.count(), 10000)
+              ):
+
+                  try:
+
+                      element = all_elements.nth(i)
+
+                      element_id = (
+                          element.get_attribute("id")
+                          or ""
+                      )
+
+                      if "offer" not in element_id.lower():
+                          continue
 
                       if not element.is_visible():
                           continue
@@ -570,60 +706,68 @@ jobs:
                           element.inner_text()
                       )
 
-                      lower = text.lower()
+                      print(
+                          "ID:",
+                          element_id
+                      )
 
-                      if (
-                          "giocagio" not in lower
-                          and "55,00" not in lower
-                      ):
-                          continue
+                      if text:
 
-                      if len(text) > 5000:
-                          continue
+                          print(
+                              "TEXT:",
+                              text[:1500]
+                          )
 
-                      found_containers += 1
+                      for attr in [
+                          "data-aod-atc-action",
+                          "data-csa-c-item-id",
+                          "data-csa-c-type",
+                          "data-csa-c-content-id"
+                      ]:
+
+                          value = element.get_attribute(
+                              attr
+                          )
+
+                          if value:
+
+                              print(
+                                  attr + ":",
+                                  repr(value)
+                              )
 
                       print()
-                      print(
-                          "CONTAINER",
-                          found_containers
-                      )
 
-                      print(
-                          text[:4000]
-                      )
+                      printed += 1
 
-                      if found_containers >= 20:
+                      if printed >= 100:
+
                           break
 
                   except Exception:
                       pass
 
-              if found_containers == 0:
+              if printed == 0:
 
                   print(
-                      "NO RELEVANT CONTAINERS FOUND"
+                      "NO OFFER IDS FOUND"
                   )
 
               print()
               print("=" * 80)
-              print("11. FIRST 15000 CHARACTERS OF PAGE")
+              print("11. COMPLETE OFFER TEXT")
               print("=" * 80)
 
               print(
-                  body[:15000]
+                  body[:25000]
               )
 
               print()
               print("=" * 80)
-              print("12. FINAL")
+              print("12. END")
               print("=" * 80)
-
-              print(
-                  "Diagnostic completed."
-              )
 
               browser.close()
           PY
 
-          python amazon_diagnostic.py
+          python amazon_offer_structure.py

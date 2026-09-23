@@ -8,15 +8,27 @@ ZIP_CODE = "00100"
 
 
 async def set_delivery_location(page):
-    await page.goto("https://www.amazon.it/", wait_until="domcontentloaded", timeout=60000)
+    await page.goto(
+        "https://www.amazon.it/",
+        wait_until="domcontentloaded",
+        timeout=60000,
+    )
+
     await page.wait_for_timeout(3000)
 
-    # Amazon può mostrare una pagina intermedia "Continua con gli acquisti"
-    if "Fai clic sul pulsante qui sotto per continuare" in await page.locator("body").inner_text():
-        buttons = page.get_by_text("Continua con gli acquisti", exact=True)
+    # Amazon può mostrare una pagina intermedia
+    # "Continua con gli acquisti"
+    body = await page.locator("body").inner_text()
+
+    if "Fai clic sul pulsante qui sotto per continuare" in body:
+        buttons = page.get_by_text(
+            "Continua con gli acquisti",
+            exact=True,
+        )
 
         for i in range(await buttons.count()):
             button = buttons.nth(i)
+
             if await button.is_visible():
                 await button.click()
                 await page.wait_for_timeout(4000)
@@ -40,10 +52,15 @@ async def set_delivery_location(page):
     if await zip_input.count() == 0:
         return False
 
+    if not await zip_input.is_visible():
+        return False
+
     await zip_input.fill(ZIP_CODE)
 
     # Pulsante reale di conferma del CAP
-    confirm = page.locator("#GLUXZipInputSection input[type='submit']")
+    confirm = page.locator(
+        "#GLUXZipInputSection input[type='submit']"
+    )
 
     if await confirm.count() == 0:
         return False
@@ -68,13 +85,16 @@ async def set_delivery_location(page):
     if ZIP_CODE not in value:
         return False
 
-    # Non è necessario chiudere il popup:
-    # la località viene comunque utilizzata quando apriamo il prodotto.
     return True
 
 
 async def get_offer_listing(page):
-    await page.goto(PRODUCT_URL, wait_until="domcontentloaded", timeout=60000)
+    await page.goto(
+        PRODUCT_URL,
+        wait_until="domcontentloaded",
+        timeout=60000,
+    )
+
     await page.wait_for_timeout(4000)
 
     body = await page.locator("body").inner_text()
@@ -89,9 +109,11 @@ async def get_offer_listing(page):
     if await title.count() == 0:
         return None
 
-    title_text = " ".join(await title.first.inner_text().split())
+    title_text = " ".join(
+        (await title.first.inner_text()).split()
+    )
 
-    if ASIN not in page.url and "Pokémon" not in title_text:
+    if "Pokémon" not in title_text:
         return None
 
     # Link "Visualizza tutte le opzioni di acquisto"
@@ -117,17 +139,26 @@ async def get_offer_listing(page):
 
 def extract_price(text):
     """
-    Estrae il primo prezzo in formato italiano.
+    Estrae un prezzo in formato italiano.
+
     Esempi:
     114,90 €
     55,00 €
+    1.234,90 €
     """
-    match = re.search(r"(\d{1,4}(?:\.\d{3})*,\d{2})\s*€", text)
+
+    match = re.search(
+        r"(\d{1,4}(?:\.\d{3})*,\d{2})\s*€",
+        text,
+    )
 
     if not match:
         return None
 
-    value = match.group(1).replace(".", "").replace(",", ".")
+    value = match.group(1)
+
+    value = value.replace(".", "")
+    value = value.replace(",", ".")
 
     try:
         return float(value)
@@ -137,7 +168,10 @@ def extract_price(text):
 
 async def check_amazon():
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+
+        browser = await p.chromium.launch(
+            headless=True
+        )
 
         context = await browser.new_context(
             locale="it-IT",
@@ -150,30 +184,48 @@ async def check_amazon():
             print("=== AMAZON STOCK CHECK ===")
             print(f"ASIN: {ASIN}")
 
-            # 1. Imposta CAP italiano
+            # -------------------------------------------------
+            # 1. IMPOSTA LOCALITÀ ITALIANA
+            # -------------------------------------------------
+
             print("1. Impostazione località italiana...")
 
             location_ok = await set_delivery_location(page)
 
             if not location_ok:
-                print("UNKNOWN: impossibile impostare la località")
+                print(
+                    "UNKNOWN: impossibile impostare la località"
+                )
+
                 return "UNKNOWN", None
 
-            print(f"Località impostata: CAP {ZIP_CODE}")
+            print(
+                f"Località impostata: CAP {ZIP_CODE}"
+            )
 
-            # 2. Apri prodotto
+            # -------------------------------------------------
+            # 2. APRE IL PRODOTTO
+            # -------------------------------------------------
+
             print("2. Apertura prodotto...")
 
             offer_url = await get_offer_listing(page)
 
             if not offer_url:
-                print("UNKNOWN: pagina prodotto/offerte non disponibile")
+                print(
+                    "UNKNOWN: pagina prodotto/offerte "
+                    "non disponibile"
+                )
+
                 return "UNKNOWN", None
 
-            print(f"Offer listing URL trovata:")
+            print("Offer listing URL trovata:")
             print(offer_url)
 
-            # 3. Apri lista offerte
+            # -------------------------------------------------
+            # 3. APRE LA LISTA DELLE OFFERTE
+            # -------------------------------------------------
+
             print("3. Apertura lista offerte...")
 
             await page.goto(
@@ -186,59 +238,101 @@ async def check_amazon():
 
             body = await page.locator("body").inner_text()
 
-            # CAPTCHA / pagina anomala
-            if "Fai clic sul pulsante qui sotto per continuare" in body:
-                print("UNKNOWN: pagina intermedia Amazon")
+            # Pagina intermedia
+            if (
+                "Fai clic sul pulsante qui sotto "
+                "per continuare"
+            ) in body:
+                print(
+                    "UNKNOWN: pagina intermedia Amazon"
+                )
+
                 return "UNKNOWN", None
 
-            if "Robot Check" in body or "Inserisci i caratteri" in body:
-                print("UNKNOWN: Amazon ha richiesto una verifica")
+            # Verifica Amazon challenge senza tentare
+            # alcun bypass
+            if (
+                "Robot Check" in body
+                or "Inserisci i caratteri" in body
+            ):
+                print(
+                    "UNKNOWN: Amazon ha richiesto "
+                    "una verifica"
+                )
+
                 return "UNKNOWN", None
 
-            # 4. Leggi le offerte reali
+            # -------------------------------------------------
+            # 4. LEGGE LE OFFERTE REALI
+            # -------------------------------------------------
+
             offers = page.locator("div#aod-offer")
 
             count = await offers.count()
 
-            print(f"Offerte reali trovate: {count}")
+            print(
+                f"Offerte reali trovate: {count}"
+            )
 
             if count == 0:
-                print("OUT_OF_STOCK: nessuna offerta")
+                print(
+                    "OUT_OF_STOCK: nessuna offerta"
+                )
+
                 return "OUT_OF_STOCK", None
 
             purchasable_count = 0
             minimum_price = None
 
+            # -------------------------------------------------
+            # 5. ANALIZZA OGNI OFFERTA
+            # -------------------------------------------------
+
             for i in range(count):
+
                 offer = offers.nth(i)
 
                 if not await offer.is_visible():
                     continue
 
-                text = " ".join((await offer.inner_text()).split())
+                text = " ".join(
+                    (await offer.inner_text()).split()
+                )
 
                 price = extract_price(text)
 
-                seller_locator = offer.locator("#aod-offer-soldBy")
+                # Venditore
+                seller_locator = offer.locator(
+                    "#aod-offer-soldBy"
+                )
 
                 seller = ""
 
                 if await seller_locator.count():
+
                     seller = " ".join(
-                        (await seller_locator.first.inner_text()).split()
+                        (
+                            await seller_locator
+                            .first
+                            .inner_text()
+                        ).split()
                     )
 
-                # Il pulsante vero dell'offerta
+                # Pulsante reale "Aggiungi al carrello"
                 cart_button = offer.locator(
                     "span.aod-atc-generic-btn-desktop"
                 )
 
                 has_cart = False
 
-                for j in range(await cart_button.count()):
+                for j in range(
+                    await cart_button.count()
+                ):
+
                     button = cart_button.nth(j)
 
                     if await button.is_visible():
+
                         has_cart = True
                         break
 
@@ -249,37 +343,69 @@ async def check_amazon():
                     f"carrello={has_cart}"
                 )
 
+                # Prezzo minimo
                 if price is not None:
-                    if minimum_price is None or price < minimum_price:
+
+                    if (
+                        minimum_price is None
+                        or price < minimum_price
+                    ):
                         minimum_price = price
 
+                # Offerta realmente acquistabile
                 if has_cart:
                     purchasable_count += 1
 
-            print(f"Offerte acquistabili: {purchasable_count}")
+            # -------------------------------------------------
+            # 6. RISULTATO
+            # -------------------------------------------------
+
+            print(
+                f"Offerte acquistabili: "
+                f"{purchasable_count}"
+            )
 
             if minimum_price is not None:
-                print(f"Prezzo minimo: {minimum_price:.2f} EUR")
+
+                print(
+                    f"Prezzo minimo: "
+                    f"{minimum_price:.2f} EUR"
+                )
 
             if purchasable_count > 0:
+
                 print("AVAILABLE")
-                return "AVAILABLE", minimum_price
+
+                return (
+                    "AVAILABLE",
+                    minimum_price,
+                )
 
             print("OUT_OF_STOCK")
-            return "OUT_OF_STOCK", minimum_price
+
+            return (
+                "OUT_OF_STOCK",
+                minimum_price,
+            )
 
         except Exception as e:
+
             print(f"ERROR: {e}")
+
             return "ERROR", None
 
         finally:
+
             await browser.close()
 
 
 if __name__ == "__main__":
+
     import asyncio
 
-    status, price = asyncio.run(check_amazon())
+    status, price = asyncio.run(
+        check_amazon()
+    )
 
     print("========================================")
     print(f"STATUS: {status}")

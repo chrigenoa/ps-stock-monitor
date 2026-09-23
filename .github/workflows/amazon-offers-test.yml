@@ -1,10 +1,10 @@
-name: Amazon Offer Test
+name: Amazon Offer Repeat Test
 
 on:
   workflow_dispatch:
 
 jobs:
-  amazon-offer:
+  amazon-repeat:
     runs-on: ubuntu-latest
 
     steps:
@@ -22,20 +22,114 @@ jobs:
           pip install playwright
           playwright install --with-deps chromium
 
-      - name: Run Amazon offer test
+      - name: Run Amazon repeat offer test
         run: |
-          cat > amazon_offer_test.py <<'PY'
+          cat > amazon_repeat_test.py <<'PY'
           import re
+          import asyncio
           from playwright.async_api import async_playwright
 
           PRODUCT_URL = "https://www.amazon.it/dp/B0H9HFPRRD/"
           ZIP_CODE = "00100"
           TARGET_PRICE = "55,00"
           TARGET_SELLER = "giocagio"
+          ATTEMPTS = 5
 
 
           def clean(text):
               return re.sub(r"\s+", " ", text or "").strip()
+
+
+          async def handle_continue(page):
+              buttons = page.get_by_text(
+                  "Continua con gli acquisti",
+                  exact=True
+              )
+
+              count = await buttons.count()
+
+              for i in range(count):
+                  try:
+                      button = buttons.nth(i)
+
+                      if await button.is_visible():
+                          print("CLICK: Continua con gli acquisti")
+                          await button.click()
+                          await page.wait_for_timeout(5000)
+                          return True
+
+                  except Exception as e:
+                      print("Continue click error:", repr(e))
+
+              return False
+
+
+          async def set_delivery_zip(page):
+              delivery = page.locator("#glow-ingress-block")
+
+              if await delivery.count() == 0:
+                  print("ERROR: delivery block not found")
+                  return False
+
+              print(
+                  "DELIVERY BEFORE:",
+                  clean(await delivery.first.inner_text())
+              )
+
+              await delivery.first.click()
+              await page.wait_for_timeout(2000)
+
+              zip_input = page.locator("#GLUXZipUpdateInput")
+
+              if await zip_input.count() == 0:
+                  print("ERROR: ZIP input not found")
+                  return False
+
+              await zip_input.fill(ZIP_CODE)
+
+              confirm = page.locator(
+                  "#GLUXZipInputSection input[type='submit']"
+              )
+
+              if await confirm.count() == 0:
+                  print("ERROR: ZIP confirm button not found")
+                  return False
+
+              await confirm.first.click()
+              await page.wait_for_timeout(3000)
+
+              confirmation = page.locator(
+                  "#GLUXZipConfirmationValue"
+              )
+
+              if await confirmation.count() > 0:
+                  print(
+                      "CONFIRMED ZIP:",
+                      clean(await confirmation.first.inner_text())
+                  )
+
+              return True
+
+
+          async def get_offer_url(page):
+              offer_link = page.locator(
+                  "a[href*='/gp/offer-listing/B0H9HFPRRD']"
+              )
+
+              if await offer_link.count() == 0:
+                  print("ERROR: purchase options link not found")
+                  return None
+
+              href = await offer_link.first.get_attribute("href")
+
+              if not href:
+                  print("ERROR: empty offer href")
+                  return None
+
+              if href.startswith("/"):
+                  href = "https://www.amazon.it" + href
+
+              return href
 
 
           async def main():
@@ -64,114 +158,15 @@ jobs:
                   print("URL:", page.url)
                   print("TITLE:", await page.title())
 
-                  # Gestione della pagina intermedia
-                  # "Continua con gli acquisti".
-                  continue_buttons = page.get_by_text(
-                      "Continua con gli acquisti",
-                      exact=True
-                  )
-
-                  if await continue_buttons.count() > 0:
-                      for i in range(await continue_buttons.count()):
-                          try:
-                              button = continue_buttons.nth(i)
-
-                              if await button.is_visible():
-                                  print("CLICK: Continua con gli acquisti")
-                                  await button.click()
-                                  await page.wait_for_timeout(5000)
-                                  break
-
-                          except Exception as e:
-                              print("Continue click error:", repr(e))
-
-                  print("URL AFTER CONTINUE:", page.url)
+                  await handle_continue(page)
 
                   print("=" * 80)
-                  print("2. SET DELIVERY ZIP")
+                  print("2. SET DELIVERY")
                   print("=" * 80)
 
-                  delivery = page.locator("#glow-ingress-block")
-
-                  if await delivery.count() == 0:
-                      print("ERROR: delivery block not found")
-                      await page.screenshot(
-                          path="amazon-delivery-error.png",
-                          full_page=True
-                      )
+                  if not await set_delivery_zip(page):
+                      await browser.close()
                       raise SystemExit(1)
-
-                  print(
-                      "INITIAL DELIVERY:",
-                      clean(await delivery.first.inner_text())
-                  )
-
-                  await delivery.first.click()
-                  await page.wait_for_timeout(2000)
-
-                  zip_input = page.locator("#GLUXZipUpdateInput")
-
-                  if await zip_input.count() == 0:
-                      print("ERROR: ZIP input not found")
-                      raise SystemExit(1)
-
-                  print("ZIP INPUT FOUND")
-
-                  await zip_input.fill(ZIP_CODE)
-
-                  zip_confirm = page.locator(
-                      "#GLUXZipInputSection input[type='submit']"
-                  )
-
-                  print(
-                      "ZIP CONFIRM COUNT:",
-                      await zip_confirm.count()
-                  )
-
-                  if await zip_confirm.count() == 0:
-                      print("ERROR: ZIP confirm button not found")
-                      raise SystemExit(1)
-
-                  print(
-                      "ZIP CONFIRM VISIBLE:",
-                      await zip_confirm.first.is_visible()
-                  )
-
-                  print(
-                      "ZIP CONFIRM DISABLED:",
-                      await zip_confirm.first.is_disabled()
-                  )
-
-                  await zip_confirm.first.click()
-
-                  await page.wait_for_timeout(3000)
-
-                  confirmation = page.locator(
-                      "#GLUXZipConfirmationValue"
-                  )
-
-                  if await confirmation.count() > 0:
-                      print(
-                          "CONFIRMED ZIP:",
-                          clean(await confirmation.first.inner_text())
-                      )
-                  else:
-                      print("CONFIRMED ZIP: NOT FOUND")
-
-                  # Se Amazon rende visibile il pulsante Continua,
-                  # lo utilizziamo. Altrimenti proseguiamo comunque:
-                  # in precedenti sessioni il CAP è stato trasferito
-                  # correttamente alla pagina prodotto.
-                  confirm_close = page.locator("#GLUXConfirmClose")
-
-                  if await confirm_close.count() > 0:
-                      try:
-                          if await confirm_close.first.is_visible():
-                              print("CLICK: GLUXConfirmClose")
-                              await confirm_close.first.click()
-                              await page.wait_for_timeout(3000)
-                      except Exception as e:
-                          print("Confirm close error:", repr(e))
 
                   print("=" * 80)
                   print("3. OPEN PRODUCT")
@@ -186,20 +181,23 @@ jobs:
                   await page.wait_for_timeout(5000)
 
                   print("PRODUCT URL:", page.url)
-                  print("PRODUCT TITLE:", clean(await page.title()))
+                  print(
+                      "PRODUCT TITLE:",
+                      clean(await page.title())
+                  )
 
                   product_title = page.locator("#productTitle")
 
-                  print(
-                      "PRODUCT TITLE COUNT:",
-                      await product_title.count()
-                  )
+                  if await product_title.count() == 0:
+                      print("ERROR: product page not detected")
 
-                  if await product_title.count() > 0:
-                      print(
-                          "PRODUCT:",
-                          clean(await product_title.first.inner_text())
+                      await page.screenshot(
+                          path="amazon-product-error.png",
+                          full_page=True
                       )
+
+                      await browser.close()
+                      raise SystemExit(1)
 
                   delivery = page.locator("#glow-ingress-block")
 
@@ -210,453 +208,202 @@ jobs:
                       )
 
                   print("=" * 80)
-                  print("4. FIND PURCHASE OPTIONS")
+                  print("4. GET OFFER PAGE")
                   print("=" * 80)
 
-                  offer_link = page.locator(
-                      "a[href*='/gp/offer-listing/B0H9HFPRRD']"
-                  )
+                  offer_url = await get_offer_url(page)
 
-                  print(
-                      "OFFER LINK COUNT:",
-                      await offer_link.count()
-                  )
-
-                  if await offer_link.count() == 0:
-                      print("ERROR: purchase options link not found")
-
-                      await page.screenshot(
-                          path="amazon-no-offer-link.png",
-                          full_page=True
-                      )
-
+                  if not offer_url:
+                      await browser.close()
                       raise SystemExit(1)
 
-                  offer_href = await offer_link.first.get_attribute("href")
-
-                  print("OFFER HREF:", offer_href)
-
-                  if not offer_href:
-                      print("ERROR: empty offer href")
-                      raise SystemExit(1)
-
-                  if offer_href.startswith("/"):
-                      offer_href = "https://www.amazon.it" + offer_href
-
-                  print("FULL OFFER URL:", offer_href)
+                  print("OFFER URL:", offer_url)
 
                   offers_page = await context.new_page()
 
-                  await offers_page.goto(
-                      offer_href,
-                      wait_until="domcontentloaded",
-                      timeout=60000
-                  )
-
-                  await offers_page.wait_for_timeout(5000)
-
-                  print("OFFERS URL:", offers_page.url)
-                  print(
-                      "OFFERS TITLE:",
-                      clean(await offers_page.title())
-                  )
-
+                  print("")
                   print("=" * 80)
-                  print("5. READ REAL OFFER CONTAINERS")
+                  print("5. REPEAT OFFER PAGE")
                   print("=" * 80)
 
-                  offers = offers_page.locator("div#aod-offer")
+                  found_target = False
 
-                  offer_count = await offers.count()
+                  for attempt in range(1, ATTEMPTS + 1):
 
-                  print(
-                      "REAL OFFER CONTAINERS:",
-                      offer_count
-                  )
-
-                  target_offer = None
-                  target_number = None
-
-                  for i in range(offer_count):
-                      offer = offers.nth(i)
+                      print("")
+                      print("#" * 80)
+                      print(f"ATTEMPT {attempt}/{ATTEMPTS}")
+                      print("#" * 80)
 
                       try:
-                          offer_text = clean(
-                              await offer.inner_text()
+                          await offers_page.goto(
+                              offer_url,
+                              wait_until="domcontentloaded",
+                              timeout=60000
                           )
-                      except Exception:
-                          offer_text = ""
 
-                      price_locator = offer.locator(
-                          "#aod-offer-price"
-                      )
+                          await offers_page.wait_for_timeout(5000)
 
-                      seller_locator = offer.locator(
-                          "#aod-offer-soldBy"
-                      )
-
-                      if await price_locator.count() > 0:
-                          price = clean(
-                              await price_locator.first.inner_text()
+                          print(
+                              "URL:",
+                              offers_page.url
                           )
-                      else:
-                          price = ""
 
-                      if await seller_locator.count() > 0:
-                          seller = clean(
-                              await seller_locator.first.inner_text()
+                          offers = offers_page.locator(
+                              "div#aod-offer"
                           )
-                      else:
-                          seller = ""
 
-                      print("")
-                      print("-" * 80)
-                      print(f"OFFER {i + 1}")
-                      print("PRICE:", price)
-                      print("SELLER:", seller)
+                          offer_count = await offers.count()
 
-                      # Stampa limitata del testo per mantenere il log leggibile.
-                      print(
-                          "TEXT:",
-                          offer_text[:700]
-                      )
+                          print(
+                              "REAL OFFER COUNT:",
+                              offer_count
+                          )
 
-                      # Il pulsante appartiene allo stesso
-                      # div#aod-offer.
-                      cart_button = offer.locator(
-                          "span.aod-atc-generic-btn-desktop"
-                      )
+                          if offer_count == 0:
+                              print(
+                                  "NO OFFER CONTAINERS FOUND"
+                              )
+                              continue
 
-                      print(
-                          "ADD TO CART BUTTON COUNT:",
-                          await cart_button.count()
-                      )
+                          minimum_price = None
 
-                      if await cart_button.count() > 0:
-                          for b in range(await cart_button.count()):
-                              try:
-                                  print(
-                                      " BUTTON",
-                                      b + 1,
-                                      "VISIBLE:",
-                                      await cart_button.nth(b).is_visible(),
-                                      "ID:",
-                                      await cart_button.nth(b).get_attribute("id")
+                          for i in range(offer_count):
+
+                              offer = offers.nth(i)
+
+                              price_locator = offer.locator(
+                                  "#aod-offer-price"
+                              )
+
+                              seller_locator = offer.locator(
+                                  "#aod-offer-soldBy"
+                              )
+
+                              if await price_locator.count() > 0:
+                                  price = clean(
+                                      await price_locator.first.inner_text()
                                   )
-                              except Exception:
-                                  pass
+                              else:
+                                  price = ""
 
-                      price_match = (
-                          TARGET_PRICE in price
-                          or "55,00 €" in price
-                          or "55,00" in offer_text
-                          or "55 €" in offer_text
-                      )
+                              if await seller_locator.count() > 0:
+                                  seller = clean(
+                                      await seller_locator.first.inner_text()
+                                  )
+                              else:
+                                  seller = ""
 
-                      seller_match = (
-                          TARGET_SELLER.lower() in seller.lower()
-                          or TARGET_SELLER.lower() in offer_text.lower()
-                      )
-
-                      if price_match and seller_match:
-                          target_offer = offer
-                          target_number = i + 1
-
-                          print("")
-                          print(
-                              "******** TARGET OFFER FOUND ********"
-                          )
-                          print(
-                              "OFFER NUMBER:",
-                              target_number
-                          )
-                          print("PRICE:", price)
-                          print("SELLER:", seller)
-                          print(
-                              "************************************"
-                          )
-
-                  print("=" * 80)
-                  print("6. TARGET RESULT")
-                  print("=" * 80)
-
-                  if target_offer is None:
-                      print("TARGET 55 EURO OFFER FOUND: False")
-                      print("")
-                      print(
-                          "The 55,00 EUR / giocagio offer is NOT "
-                          "present in this Amazon session."
-                      )
-                      print("")
-                      print("CURRENT OFFERS:")
-
-                      for i in range(offer_count):
-                          offer = offers.nth(i)
-
-                          price_locator = offer.locator(
-                              "#aod-offer-price"
-                          )
-
-                          seller_locator = offer.locator(
-                              "#aod-offer-soldBy"
-                          )
-
-                          if await price_locator.count() > 0:
-                              price = clean(
-                                  await price_locator.first.inner_text()
+                              print(
+                                  f"OFFER {i + 1}: "
+                                  f"{price} | {seller}"
                               )
-                          else:
-                              price = ""
 
-                          if await seller_locator.count() > 0:
-                              seller = clean(
-                                  await seller_locator.first.inner_text()
+                              # Individua il prezzo numerico
+                              # per trovare il minimo.
+                              match = re.search(
+                                  r"(\d+)[,.](\d{2})",
+                                  price
                               )
-                          else:
-                              seller = ""
 
+                              if match:
+                                  numeric = float(
+                                      match.group(1)
+                                      + "."
+                                      + match.group(2)
+                                  )
+
+                                  if (
+                                      minimum_price is None
+                                      or numeric < minimum_price
+                                  ):
+                                      minimum_price = numeric
+
+                              if (
+                                  TARGET_PRICE in price
+                                  and TARGET_SELLER.lower()
+                                  in seller.lower()
+                              ):
+                                  found_target = True
+
+                                  print("")
+                                  print(
+                                      "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+                                  )
+                                  print(
+                                      "TARGET 55 EURO FOUND!"
+                                  )
+                                  print(
+                                      "OFFER:",
+                                      i + 1
+                                  )
+                                  print(
+                                      "PRICE:",
+                                      price
+                                  )
+                                  print(
+                                      "SELLER:",
+                                      seller
+                                  )
+                                  print(
+                                      "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+                                  )
+
+                          if minimum_price is not None:
+                              print(
+                                  "MINIMUM PRICE THIS ATTEMPT:",
+                                  f"{minimum_price:.2f} EUR"
+                              )
+
+                          if found_target:
+                              print(
+                                  "TARGET FOUND - STOPPING TEST"
+                              )
+                              break
+
+                      except Exception as e:
                           print(
-                              f"  OFFER {i + 1}: {price} | {seller}"
+                              "ATTEMPT ERROR:",
+                              repr(e)
                           )
-
-                      await offers_page.screenshot(
-                          path="amazon-offers-current.png",
-                          full_page=True
-                      )
-
-                      raise SystemExit(1)
-
-                  print("TARGET 55 EURO OFFER FOUND: True")
-
-                  print("=" * 80)
-                  print("7. CLICK TARGET OFFER")
-                  print("=" * 80)
-
-                  target_button = target_offer.locator(
-                      "span.aod-atc-generic-btn-desktop"
-                  )
-
-                  if await target_button.count() == 0:
-                      print(
-                          "ERROR: target cart button not found"
-                      )
-                      raise SystemExit(1)
-
-                  target_button = target_button.first
-
-                  print(
-                      "TARGET BUTTON ID:",
-                      await target_button.get_attribute("id")
-                  )
-
-                  print(
-                      "TARGET BUTTON VISIBLE:",
-                      await target_button.is_visible()
-                  )
-
-                  try:
-                      await target_button.scroll_into_view_if_needed()
-                  except Exception:
-                      pass
-
-                  print("CLICKING TARGET BUTTON...")
-
-                  try:
-                      await target_button.click(
-                          timeout=15000
-                      )
-                  except Exception as e:
-                      print(
-                          "DIRECT CLICK FAILED:",
-                          repr(e)
-                      )
-
-                      parent_button = target_button.locator(
-                          "xpath=ancestor::span[contains(@class,'a-button')][1]"
-                      )
-
-                      if await parent_button.count() == 0:
-                          print(
-                              "ERROR: parent Amazon button not found"
-                          )
-                          raise
-
-                      print("CLICKING PARENT A-BUTTON...")
-
-                      await parent_button.first.click(
-                          timeout=15000
-                      )
-
-                  await offers_page.wait_for_timeout(5000)
-
-                  print(
-                      "URL AFTER CLICK:",
-                      offers_page.url
-                  )
-
-                  print("=" * 80)
-                  print("8. RESULT AFTER CLICK")
-                  print("=" * 80)
-
-                  body = await offers_page.locator(
-                      "body"
-                  ).inner_text()
-
-                  body_clean = clean(body)
-
-                  print(
-                      "CONTAINS 'AGGIUNTO AL CARRELLO':",
-                      "aggiunto al carrello" in body_clean.lower()
-                  )
-
-                  print(
-                      "CONTAINS 'CARRELLO':",
-                      "carrello" in body_clean.lower()
-                  )
-
-                  print(
-                      "CONTAINS '55,00':",
-                      "55,00" in body_clean
-                  )
-
-                  print(
-                      "CONTAINS 'GIOCAGIO':",
-                      "giocagio" in body_clean.lower()
-                  )
 
                   print("")
-                  print("RELEVANT LINES:")
+                  print("=" * 80)
+                  print("6. FINAL RESULT")
+                  print("=" * 80)
 
-                  for line in body.splitlines():
-                      line = clean(line)
-
-                      if not line:
-                          continue
-
-                      low = line.lower()
-
-                      if any(
-                          keyword in low
-                          for keyword in [
-                              "aggiunto",
-                              "carrello",
-                              "55,00",
-                              "giocagio"
-                          ]
-                      ):
-                          print(line[:500])
+                  if found_target:
+                      print(
+                          "55 EURO / GIOCAGIO FOUND: TRUE"
+                      )
+                  else:
+                      print(
+                          "55 EURO / GIOCAGIO FOUND: FALSE"
+                      )
 
                   await offers_page.screenshot(
-                      path="amazon-after-click.png",
+                      path="amazon-repeat-final.png",
                       full_page=True
                   )
-
-                  print("=" * 80)
-                  print("9. OPEN CART")
-                  print("=" * 80)
-
-                  cart_page = await context.new_page()
-
-                  await cart_page.goto(
-                      "https://www.amazon.it/gp/cart/view.html",
-                      wait_until="domcontentloaded",
-                      timeout=60000
-                  )
-
-                  await cart_page.wait_for_timeout(5000)
-
-                  print(
-                      "CART URL:",
-                      cart_page.url
-                  )
-
-                  print(
-                      "CART TITLE:",
-                      clean(await cart_page.title())
-                  )
-
-                  cart_body = await cart_page.locator(
-                      "body"
-                  ).inner_text()
-
-                  cart_clean = clean(cart_body)
-
-                  print("=" * 80)
-                  print("10. CART VERIFICATION")
-                  print("=" * 80)
-
-                  print(
-                      "ASIN PRESENT:",
-                      "B0H9HFPRRD" in cart_clean
-                  )
-
-                  print(
-                      "55,00 PRESENT:",
-                      "55,00" in cart_clean
-                  )
-
-                  print(
-                      "GIOCAGIO PRESENT:",
-                      "giocagio" in cart_clean.lower()
-                  )
-
-                  print(
-                      "POKEMON PRESENT:",
-                      "pokémon" in cart_clean.lower()
-                  )
-
-                  print("")
-                  print("CART RELEVANT LINES:")
-
-                  for line in cart_body.splitlines():
-                      line = clean(line)
-
-                      if not line:
-                          continue
-
-                      low = line.lower()
-
-                      if any(
-                          keyword in low
-                          for keyword in [
-                              "pokémon",
-                              "55,00",
-                              "giocagio",
-                              "carrello",
-                              "quantità"
-                          ]
-                      ):
-                          print(line[:500])
-
-                  await cart_page.screenshot(
-                      path="amazon-cart.png",
-                      full_page=True
-                  )
-
-                  print("")
-                  print("=" * 80)
-                  print("TEST FINISHED")
-                  print("=" * 80)
 
                   await browser.close()
 
+                  if not found_target:
+                      raise SystemExit(1)
+
 
           if __name__ == "__main__":
-              import asyncio
               asyncio.run(main())
           PY
 
-          python amazon_offer_test.py
+          python amazon_repeat_test.py
 
       - name: Upload Amazon diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: amazon-offer-diagnostics
+          name: amazon-repeat-diagnostics
           path: |
-            amazon-after-click.png
-            amazon-cart.png
-            amazon-offers-current.png
-            amazon-delivery-error.png
-            amazon-no-offer-link.png
+            amazon-repeat-final.png
+            amazon-product-error.png
           if-no-files-found: ignore

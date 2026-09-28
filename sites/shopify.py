@@ -1,7 +1,7 @@
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 
-def check_stock(url: str) -> str:
+def check_shopify(url: str) -> str:
     """
     Controlla lo stato stock di un prodotto Shopify nel mercato italiano.
 
@@ -48,10 +48,6 @@ def check_stock(url: str) -> str:
 
             # ==========================================================
             # 2. SELEZIONE MERCATO ITALIANO
-            #
-            # Shopify usa un input hidden country_code.
-            # Non possiamo usare fill() perché l'input non è visibile.
-            # Impostiamo quindi IT via JavaScript e inviamo il form.
             # ==========================================================
 
             localization_form = page.locator(
@@ -147,11 +143,6 @@ def check_stock(url: str) -> str:
 
             # ==========================================================
             # 5. CONTENITORE REALE DEL PRODOTTO
-            #
-            # Dal test diagnostico sappiamo che il contenitore corretto
-            # è:
-            #
-            # section.product__info-container
             # ==========================================================
 
             product_container = page.locator(
@@ -223,12 +214,10 @@ def check_stock(url: str) -> str:
                 except Exception:
                     disabled = False
 
-                # Sold Out esplicito
                 if "sold out" in text:
                     sold_out_button_found = True
                     continue
 
-                # Pulsante di acquisto attivo
                 if (
                     not disabled
                     and any(

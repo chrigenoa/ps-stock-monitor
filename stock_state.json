@@ -4,34 +4,17 @@
     "last_check": "2026-09-22T14:56:20.118751+00:00",
     "last_result": "OUT_OF_STOCK"
   },
-  "ps5_pro": {
-    "status": "OUT_OF_STOCK",
-    "last_check": "2026-09-22T14:56:20.118751+00:00",
-    "last_result": "OUT_OF_STOCK"
-  },
+  "ps5_pro": "OUT_OF_STOCK",
   "wolverine_battle_yellow_controller": {
     "status": "OUT_OF_STOCK",
     "last_check": "2026-09-22T14:56:20.118751+00:00",
     "last_result": "OUT_OF_STOCK"
   },
-  "gta_vi_black_controller": {
-    "status": "OUT_OF_STOCK",
-    "last_check": "2026-09-22T14:56:20.118751+00:00",
-    "last_result": "OUT_OF_STOCK"
-  },
-  "gta_vi_white_controller": {
-    "status": "OUT_OF_STOCK",
-    "last_check": "2026-09-22T14:56:20.118751+00:00",
-    "last_result": "OUT_OF_STOCK"
-  },
-  "wolverine_adamantium_controller": {
-    "status": "AVAILABLE",
-    "last_check": "2026-09-22T14:56:20.118751+00:00",
-    "last_result": "AVAILABLE"
-  },
-  "gta_vi_album_vinyl": {
-    "status": "OUT_OF_STOCK",
-    "last_check": "2026-09-22T14:56:20.118751+00:00",
-    "last_result": "OUT_OF_STOCK"
-  }
+  "gta_vi_black_controller": "OUT_OF_STOCK",
+  "gta_vi_white_controller": "OUT_OF_STOCK",
+  "wolverine_adamantium_controller": "AVAILABLE",
+  "gta_vi_album_vinyl": "OUT_OF_STOCK",
+  "wolverine_covers": "OUT_OF_STOCK",
+  "wolverine_controller": "OUT_OF_STOCK",
+  "pokemon_30th_anniversary": "OUT_OF_STOCK"
 }
